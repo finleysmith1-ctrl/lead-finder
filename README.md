@@ -7,7 +7,7 @@ list for freelance web-design outreach. No API key or sign-up required.
 ## The app
 
 ```bash
-python3 app.py        # then open http://localhost:842
+python3 app.py        # then open http://localhost:84200
 ```
 
 A local web app: run a search, then work the list over time — mark each business

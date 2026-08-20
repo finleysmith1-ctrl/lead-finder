@@ -2,7 +2,7 @@
 """
 app.py — the lead finder as an actual app, in your browser.
 
-    python3 app.py            then open http://localhost:842
+    python3 app.py            then open http://localhost:8420
 
 WHY THIS EXISTS: the CLI prints a CSV. A CSV is a file, not a tool — you cannot
 see at a glance which leads you have already contacted, which ones need checking,
@@ -32,7 +32,10 @@ import lead_finder as LF
 HERE = Path(__file__).parent
 STORE = HERE / "leads.json"
 STATIC = HERE / "static"
-PORT = int(os.environ.get("PORT", "842"))
+# 🔴 Above 1024. Ports below that are privileged — macOS refuses to bind one
+# without root, so the original 842 crashed with a bare PermissionError on a
+# normal Mac account while working fine on the server, which runs as root.
+PORT = int(os.environ.get("PORT", "8420"))
 
 # Where a lead is in the pipeline. Deliberately short — a status list nobody can
 # hold in their head is a status list nobody updates.
@@ -261,7 +264,17 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     # Loopback only. This holds a list of local businesses and your notes about
     # them — it has no login, so it must not be reachable from the network.
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except PermissionError:
+        raise SystemExit(
+            f"\n  Port {PORT} needs admin rights. Pick one above 1024:\n"
+            f"      PORT=8420 python3 app.py\n")
+    except OSError as e:
+        raise SystemExit(
+            f"\n  Could not start on port {PORT}: {e}\n"
+            f"  Something else is probably using it. Try another:\n"
+            f"      PORT=8421 python3 app.py\n")
     print(f"\n  Lead Finder running — open  http://localhost:{PORT}\n")
     print("  Ctrl+C to stop.\n")
     try:
