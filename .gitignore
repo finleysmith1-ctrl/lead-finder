@@ -1,14 +1,15 @@
+
 # Generated output — scraped business data, not source. Don't commit it.
-leads.csv
-*.csv
-
 # Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-*.egg-info/
-.pytest_cache/
-
 # macOS
+*.csv
+*.egg-info/
+*.pyc
+*.tmp
 .DS_Store
+.pytest_cache/
+.venv/
+__pycache__/
+leads.csv
+leads.json
+venv/

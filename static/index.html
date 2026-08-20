@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Finder</title>
+<style>
+/* ---------------------------------------------------------------- tokens
+   Palette: a deep pine chrome against a cool, faintly green-biased paper, with
+   jade as the single action colour. Green because the whole tool is about
+   finding openings; the neutrals carry a trace of the same hue so they read as
+   chosen rather than default grey. Sienna and pine are reserved for STATE
+   (needs checking / won) and are never used decoratively. */
+:root {
+  --chrome:    #0e1c1a;
+  --chrome-2:  #16302c;
+  --chrome-ink:#dfeae6;
+  --chrome-dim:#7f9a93;
+
+  --paper:     #f3f6f4;
+  --card:      #ffffff;
+  --ink:       #101715;
+  --ink-soft:  #4b5a56;
+  --ink-faint: #7d8c88;
+  --rule:      #dfe6e2;
+
+  --jade:      #0d7a5f;
+  --jade-soft: #e3f2ec;
+  --sienna:    #a8491f;
+  --sienna-soft:#fbeee6;
+  --gold:      #8a6a10;
+  --gold-soft: #f8f0d8;
+  --slate-soft:#eceff0;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16,23,21,.05), 0 6px 20px -12px rgba(16,23,21,.22);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chrome: #0a1413; --chrome-2: #12241f; --chrome-ink: #dfeae6; --chrome-dim: #6f8a83;
+    --paper: #0f1513; --card: #161d1b; --ink: #e9efec; --ink-soft: #9fb0aa;
+    --ink-faint: #6d7d78; --rule: #232d2a;
+    --jade: #4cc79c; --jade-soft: #10261f;
+    --sienna: #e08a5c; --sienna-soft: #2a1a12;
+    --gold: #d9b45e; --gold-soft: #262013;
+    --slate-soft: #1c2422;
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 20px -12px rgba(0,0,0,.7);
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: grid; grid-template-columns: 300px 1fr; min-height: 100vh;
+}
+@media (max-width: 860px) { body { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------------ rail */
+.rail {
+  background: var(--chrome); color: var(--chrome-ink); padding: 24px 20px 32px;
+  display: flex; flex-direction: column; gap: 26px;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; }
+.brand b { font-size: 17px; letter-spacing: -.02em; font-weight: 650; }
+.brand span { font-size: 11px; color: var(--chrome-dim); letter-spacing: .09em; text-transform: uppercase; }
+
+.rail h2 {
+  margin: 0 0 12px; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--chrome-dim); font-weight: 650;
+}
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; }
+.field label { font-size: 11.5px; color: var(--chrome-dim); letter-spacing: .02em; }
+.field input, .field select {
+  background: var(--chrome-2); border: 1px solid rgba(255,255,255,.09);
+  color: var(--chrome-ink); border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 14px;
+}
+.field input:focus, .field select:focus { outline: 2px solid var(--jade); outline-offset: 1px; }
+.check { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--chrome-ink); cursor: pointer; }
+.check input { margin-top: 3px; accent-color: var(--jade); }
+.check small { display: block; color: var(--chrome-dim); font-size: 11.5px; line-height: 1.45; }
+
+button.go {
+  width: 100%; margin-top: 14px; padding: 11px; border: 0; border-radius: 8px;
+  background: var(--jade); color: #fff; font: 650 14px/1 inherit; cursor: pointer;
+  transition: filter .15s ease;
+}
+button.go:hover:not(:disabled) { filter: brightness(1.12); }
+button.go:disabled { opacity: .45; cursor: default; }
+button.go:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.hist { display: flex; flex-direction: column; gap: 7px; }
+.hist div {
+  font-size: 12px; color: var(--chrome-dim); line-height: 1.4;
+  padding-bottom: 7px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.hist b { color: var(--chrome-ink); font-weight: 550; }
+.rail footer { margin-top: auto; font-size: 11.5px; color: var(--chrome-dim); line-height: 1.5; }
+.rail footer a { color: var(--chrome-dim); }
+
+/* ------------------------------------------------------------------ main */
+main { padding: 26px 30px 70px; min-width: 0; }
+.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+h1 { margin: 0; font-size: 25px; letter-spacing: -.025em; font-weight: 680; }
+.sub { margin: 4px 0 0; color: var(--ink-soft); font-size: 14px; }
+
+/* Counts are the summary that comes before the detail. They double as filters,
+   so the number you want to act on is also the way in. */
+.counts { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--rule); background: var(--card); border-radius: 99px;
+  padding: 6px 13px; font-size: 13px; cursor: pointer; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 7px; transition: border-color .13s ease;
+}
+.chip:hover { border-color: var(--ink-faint); }
+.chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.chip b { font-variant-numeric: tabular-nums; font-weight: 650; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; font-style: normal; }
+
+.tools { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.tools input {
+  flex: 1; min-width: 180px; padding: 9px 13px; border-radius: 8px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--ink); font: inherit; font-size: 14px;
+}
+.tools input:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+.tools a.export {
+  font-size: 13px; color: var(--jade); text-decoration: none; font-weight: 600;
+  border: 1px solid var(--rule); padding: 9px 13px; border-radius: 8px; background: var(--card);
+}
+.tools a.export:hover { border-color: var(--jade); }
+
+/* ----------------------------------------------------------------- leads */
+.leads { display: flex; flex-direction: column; gap: 9px; }
+.lead {
+  background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+  border-left: 3px solid var(--rule);
+}
+/* State is carried by the stripe as well as the pill, so a list scans without
+   reading a single word. */
+.lead[data-s="new"]       { border-left-color: var(--jade); }
+.lead[data-s="contacted"] { border-left-color: var(--gold); }
+.lead[data-s="replied"]   { border-left-color: #2f6fa8; }
+.lead[data-s="won"]       { border-left-color: #1f7a3f; }
+.lead[data-s="dead"]      { border-left-color: var(--rule); }
+.lead[data-s="dead"] .head { opacity: .5; }
+
+.head { display: flex; align-items: center; gap: 14px; padding: 13px 16px; cursor: pointer; }
+.head:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.name { font-weight: 620; font-size: 15px; letter-spacing: -.008em; }
+.meta { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; }
+.grow { flex: 1; min-width: 0; }
+.grow > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pill {
+  font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase;
+  padding: 4px 9px; border-radius: 99px; white-space: nowrap;
+}
+.p-new       { background: var(--jade-soft);  color: var(--jade); }
+.p-contacted { background: var(--gold-soft);  color: var(--gold); }
+.p-replied   { background: #e6eef6;           color: #2f6fa8; }
+.p-won       { background: #e4f3e8;           color: #1f7a3f; }
+.p-dead      { background: var(--slate-soft); color: var(--ink-faint); }
+@media (prefers-color-scheme: dark) {
+  .p-replied { background: #14212e; } .p-won { background: #10241a; }
+}
+.warn {
+  font-size: 11.5px; background: var(--sienna-soft); color: var(--sienna);
+  padding: 4px 9px; border-radius: 6px; white-space: nowrap; font-weight: 550;
+}
+
+.body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--rule); }
+.lead.open .body { display: block; }
+.row2 { display: flex; gap: 22px; flex-wrap: wrap; padding: 14px 0 12px; font-size: 13.5px; }
+.row2 dt { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 2px; }
+.row2 dd { margin: 0; }
+.row2 a { color: var(--jade); }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.acts button {
+  font: 600 12px/1 inherit; padding: 7px 11px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--card); color: var(--ink-soft);
+}
+.acts button:hover { border-color: var(--ink-faint); }
+.acts button.sel { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.acts button.drop { margin-left: auto; color: var(--sienna); border-color: transparent; }
+textarea {
+  width: 100%; margin-top: 11px; min-height: 62px; resize: vertical; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--rule); background: var(--paper);
+  color: var(--ink); font: inherit; font-size: 13.5px;
+}
+textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+
+.empty { text-align: center; padding: 70px 20px; color: var(--ink-faint); }
+.empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 7px; font-weight: 620; }
+
+/* -------------------------------------------------------------- progress */
+.veil {
+  position: fixed; inset: 0; background: color-mix(in srgb, var(--chrome) 78%, transparent);
+  display: none; place-items: center; z-index: 50; padding: 20px;
+}
+.veil.on { display: grid; }
+.panel {
+  background: var(--card); border-radius: 14px; padding: 26px 28px; width: min(540px, 100%);
+  box-shadow: 0 24px 70px -20px rgba(0,0,0,.5);
+}
+.panel h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.015em; }
+.panel .stage { color: var(--ink-soft); font-size: 14px; min-height: 21px; }
+.bar { height: 6px; background: var(--slate-soft); border-radius: 99px; margin: 16px 0 6px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--jade); width: 0; transition: width .3s ease; }
+.tick { font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.log {
+  margin-top: 14px; max-height: 190px; overflow-y: auto; background: var(--paper);
+  border-radius: 8px; padding: 10px 12px;
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-soft);
+}
+.log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel .err { color: var(--sienna); font-size: 14px; }
+.panel button {
+  margin-top: 16px; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--rule);
+  background: var(--card); color: var(--ink); font: 600 13px/1 inherit; cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<aside class="rail">
+  <div class="brand"><b>Lead Finder</b><span>local</span></div>
+
+  <section>
+    <h2>New search</h2>
+    <div class="field">
+      <label for="loc">Where</label>
+      <input id="loc" placeholder="Portland, OR" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="cat">Business type</label>
+      <select id="cat"></select>
+    </div>
+    <div class="field">
+      <label for="rad">Radius — <span id="radlbl">3.0 km</span></label>
+      <input id="rad" type="range" min="500" max="10000" step="250" value="3000">
+    </div>
+    <label class="check">
+      <input type="checkbox" id="ver" checked>
+      <span>Check each one for a website
+        <small>Slower (~1.5s each) but it drops the ones that already have a site.</small>
+      </span>
+    </label>
+    <button class="go" id="go">Find leads</button>
+  </section>
+
+  <section>
+    <h2>Recent searches</h2>
+    <div class="hist" id="hist"></div>
+  </section>
+
+  <footer>
+    Data from OpenStreetMap. A missing website tag isn't proof —
+    always check a lead before you pitch it.
+  </footer>
+</aside>
+
+<main>
+  <div class="top">
+    <div>
+      <h1>Your leads</h1>
+      <p class="sub" id="sub">Loading…</p>
+    </div>
+    <div class="counts" id="counts"></div>
+  </div>
+
+  <div class="tools">
+    <input id="q" placeholder="Filter by name, street or note…" autocomplete="off">
+    <a class="export" href="/api/export" download="leads.csv">Export CSV</a>
+  </div>
+
+  <div class="leads" id="list"></div>
+</main>
+
+<div class="veil" id="veil">
+  <div class="panel">
+    <h3 id="pTitle">Searching</h3>
+    <div class="stage" id="pStage"></div>
+    <div class="bar"><span id="pBar"></span></div>
+    <div class="tick" id="pTick"></div>
+    <div class="log" id="pLog"></div>
+    <button id="pClose" style="display:none">Close</button>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let STATE = { leads: [], searches: [], statuses: [], categories: [] };
+let filter = 'all', query = '', polling = false;
+
+const LABEL = { new:'New', contacted:'Contacted', replied:'Replied', won:'Won', dead:'Dead' };
+const DOT   = { new:'var(--jade)', contacted:'var(--gold)', replied:'#2f6fa8',
+                won:'#1f7a3f', dead:'var(--ink-faint)' };
+
+const key = (l) => (l.name||'').trim().toLowerCase() + '|' + (l.address||'').trim().toLowerCase();
+
+async function load() {
+  const r = await fetch('/api/state');
+  STATE = await r.json();
+  if (!$('cat').options.length) {
+    $('cat').innerHTML = STATE.categories
+      .map(c => `<option value="${c}">${c.replace(/_/g,' ')}</option>`).join('');
+  }
+  // Prefill from the last search — you almost always work the same town, and
+  // retyping it every session is the kind of small friction that stops a tool
+  // getting used.
+  const last = STATE.searches[0];
+  if (last && !$('loc').value) {
+    $('loc').value = last.location;
+    $('cat').value = last.category;
+    $('rad').value = last.radius;
+    $('radlbl').textContent = (last.radius / 1000).toFixed(1) + ' km';
+    $('ver').checked = last.verified !== false;
+  }
+  render();
+  if (STATE.job && STATE.job.running && !polling) watch();
+}
+
+function render() {
+  const L = STATE.leads;
+  const by = {};
+  for (const s of STATE.statuses) by[s] = L.filter(x => (x.status||'new') === s).length;
+
+  $('sub').textContent = L.length
+    ? `${L.length} businesses found so far · ${by.new||0} you haven't contacted yet`
+    : 'Nothing yet — run a search to build your list.';
+
+  $('counts').innerHTML =
+    `<div class="chip ${filter==='all'?'on':''}" data-f="all">All <b>${L.length}</b></div>` +
+    STATE.statuses.map(s => `<div class="chip ${filter===s?'on':''}" data-f="${s}">
+      <i style="background:${DOT[s]}"></i>${LABEL[s]} <b>${by[s]||0}</b></div>`).join('');
+  $('counts').querySelectorAll('.chip').forEach(c =>
+    c.onclick = () => { filter = c.dataset.f; render(); });
+
+  $('hist').innerHTML = STATE.searches.length
+    ? STATE.searches.slice(0,6).map(s =>
+        `<div><b>${esc(s.category.replace(/_/g,' '))}</b> · ${esc(s.location)}<br>
+         ${s.added} new${s.dropped ? ` · ${s.dropped} had sites` : ''} · ${esc(s.at.slice(5))}</div>`).join('')
+    : '<div>None yet.</div>';
+
+  const q = query.toLowerCase();
+  const shown = L.filter(l => (filter === 'all' || (l.status||'new') === filter))
+                 .filter(l => !q || (l.name+' '+l.address+' '+(l.note||'')).toLowerCase().includes(q));
+
+  $('list').innerHTML = shown.length ? shown.map(card).join('') : `
+    <div class="empty"><b>${L.length ? 'Nothing matches that' : 'No leads yet'}</b>
+    ${L.length ? 'Try a different filter.' : 'Pick a place and a business type on the left.'}</div>`;
+  wire();
+}
+
+function card(l) {
+  const s = l.status || 'new';
+  const k = key(l);
+  return `<div class="lead" data-s="${s}" data-k="${esc(k)}">
+    <div class="head">
+      <div class="grow">
+        <div class="name">${esc(l.name)}</div>
+        <div class="meta">${esc(l.address || 'no address on record')}${l.phone ? ' · ' + esc(l.phone) : ''}</div>
+      </div>
+      ${l.possible_site ? `<div class="warn" title="A domain matching this name exists — confirm before pitching">check ${esc(l.possible_site)}</div>` : ''}
+      <div class="pill p-${s}">${LABEL[s]}</div>
+    </div>
+    <div class="body">
+      <div class="row2">
+        <div><dt>Phone</dt><dd>${l.phone ? esc(l.phone) : '—'}</dd></div>
+        <div><dt>Found</dt><dd>${esc(l.found_at||'')} · ${esc((l.search||'').replace(/_/g,' '))}</dd></div>
+        ${l.maps_link ? `<div><dt>Map</dt><dd><a href="${esc(l.maps_link)}" target="_blank" rel="noopener">Open in Maps</a></dd></div>` : ''}
+        ${l.possible_site ? `<div><dt>Possible site</dt><dd><a href="https://${esc(l.possible_site)}" target="_blank" rel="noopener">${esc(l.possible_site)}</a></dd></div>` : ''}
+      </div>
+      <div class="acts">
+        ${STATE.statuses.map(st => `<button data-st="${st}" class="${st===s?'sel':''}">${LABEL[st]}</button>`).join('')}
+        <button class="drop" data-drop="1">Remove</button>
+      </div>
+      <textarea placeholder="Notes — who you spoke to, what they said…">${esc(l.note||'')}</textarea>
+    </div>
+  </div>`;
+}
+
+function wire() {
+  document.querySelectorAll('.lead').forEach(el => {
+    const k = el.dataset.k;
+    el.querySelector('.head').onclick = () => el.classList.toggle('open');
+    el.querySelectorAll('.acts button[data-st]').forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      await post('/api/lead', { key: k, status: b.dataset.st });
+      const lead = STATE.leads.find(x => key(x) === k);
+      if (lead) lead.status = b.dataset.st;
+      render();
+    });
+    el.querySelector('[data-drop]').onclick = async (e) => {
+      e.stopPropagation();
+      await post('/api/forget', { key: k });
+      STATE.leads = STATE.leads.filter(x => key(x) !== k);
+      render();
+    };
+    const ta = el.querySelector('textarea');
+    let t; ta.oninput = () => {
+      clearTimeout(t);
+      t = setTimeout(() => post('/api/lead', { key: k, note: ta.value }), 500);
+    };
+  });
+}
+
+const post = (url, body) => fetch(url, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+}).then(r => r.json());
+
+/* ------------------------------------------------------------ searching */
+$('rad').oninput = () => $('radlbl').textContent = ($('rad').value / 1000).toFixed(1) + ' km';
+$('q').oninput = () => { query = $('q').value; render(); };
+
+$('go').onclick = async () => {
+  const loc = $('loc').value.trim();
+  if (!loc) { $('loc').focus(); return; }
+  $('go').disabled = true;
+  $('pTitle').textContent = 'Searching';
+  $('pStage').textContent = 'starting…';
+  $('pLog').innerHTML = ''; $('pBar').style.width = '0'; $('pTick').textContent = '';
+  $('pClose').style.display = 'none';
+  $('veil').classList.add('on');
+  const r = await post('/api/search', {
+    location: loc, category: $('cat').value,
+    radius: +$('rad').value, verify: $('ver').checked,
+  });
+  if (r.error) return fail(r.error);
+  watch();
+};
+
+function fail(msg) {
+  $('pTitle').textContent = "That didn't work";
+  $('pStage').innerHTML = `<span class="err">${esc(msg)}</span>`;
+  $('pClose').style.display = 'inline-block';
+  $('go').disabled = false;
+}
+
+async function watch() {
+  polling = true;
+  const tick = async () => {
+    const s = await (await fetch('/api/state')).json();
+    STATE = s;
+    const j = s.job || {};
+    if (j.error) { polling = false; return fail(j.error); }
+    $('pStage').textContent = j.stage || '';
+    if (j.total) {
+      $('pBar').style.width = (100 * j.done / j.total).toFixed(1) + '%';
+      $('pTick').textContent = `${j.done} of ${j.total}`;
+    }
+    $('pLog').innerHTML = (j.log || []).slice(-40).reverse()
+      .map(l => `<div>${esc(l)}</div>`).join('');
+    if (!j.running) {
+      polling = false;
+      $('pBar').style.width = '100%';
+      $('pTitle').textContent = 'Finished';
+      $('pClose').style.display = 'inline-block';
+      $('go').disabled = false;
+      render();
+      return;
+    }
+    setTimeout(tick, 900);
+  };
+  tick();
+}
+
+$('pClose').onclick = () => $('veil').classList.remove('on');
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('pClose').style.display !== 'none') $('veil').classList.remove('on');
+});
+
+load();
+</script>
+</body>
+</html>
