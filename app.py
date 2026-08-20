@@ -21,6 +21,7 @@ business data.
 import json
 import mimetypes
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -28,10 +29,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import lead_finder as LF
+import pitch as PITCH
 
 HERE = Path(__file__).parent
 STORE = HERE / "leads.json"
 STATIC = HERE / "static"
+MOCKUPS = HERE / "mockups"
 # 🔴 Above 1024. Ports below that are privileged — macOS refuses to bind one
 # without root, so the original 842 crashed with a bare PermissionError on a
 # normal Mac account while working fine on the server, which runs as root.
@@ -179,12 +182,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_static("index.html")
         if path.startswith("/static/"):
             return self._serve_static(path[len("/static/"):])
+        if path.startswith("/mockups/"):
+            # Same containment rule as static/: resolve, then confirm it is still
+            # inside the folder before opening anything.
+            target = (MOCKUPS / path[len("/mockups/"):]).resolve()
+            if (not str(target).startswith(str(MOCKUPS.resolve()))
+                    or not target.is_file()):
+                return self._send(404, {"error": "not found"})
+            return self._send(200, target.read_text(), "text/html; charset=utf-8")
         if path == "/api/state":
             db = load()
             with _lock:
                 job = dict(_job)
+            leads = []
+            for l in db["leads"]:
+                score, why = LF.score_lead(l)
+                leads.append({**l, "score": score, "why": why})
+            # Best prospects first. The whole point of scoring is that your first
+            # ten calls are your best ten, so the order has to reflect it.
+            leads.sort(key=lambda x: (-x["score"], x.get("name", "")))
             return self._send(200, {
-                "leads": db["leads"], "searches": db["searches"],
+                "leads": leads, "searches": db["searches"],
+                "has_key": bool(PITCH.api_key()),
                 "categories": sorted(LF.CATEGORIES), "job": job,
                 "statuses": STATUSES,
             })
@@ -229,12 +248,47 @@ class Handler(BaseHTTPRequestHandler):
             for l in db["leads"]:
                 if lead_key(l) == key:
                     if "status" in body and body["status"] in STATUSES:
+                        if l.get("status") != body["status"]:
+                            # Timestamp the CHANGE, not the edit — this is what
+                            # makes "contacted 6 days ago, no reply" possible, and
+                            # most sales happen on the second contact.
+                            l["status_at"] = time.strftime("%Y-%m-%d")
                         l["status"] = body["status"]
                     if "note" in body:
                         l["note"] = str(body["note"])[:500]
+                    if "pitch" in body:
+                        # Finley's edits win over the generated draft — the whole
+                        # point is that she rewrites anything that isn't right.
+                        l["pitch"] = str(body["pitch"])[:4000]
                     save(db)
                     return self._send(200, {"ok": True, "lead": l})
             return self._send(404, {"error": "no such lead"})
+
+        if path in ("/api/pitch", "/api/mockup"):
+            if not PITCH.api_key():
+                return self._send(400, {"error":
+                    "No OpenRouter key. Put one in a file called .openrouter-key "
+                    "next to app.py, or set OPENROUTER_API_KEY, then restart."})
+            db = load()
+            lead = next((l for l in db["leads"] if lead_key(l) == body.get("key")), None)
+            if not lead:
+                return self._send(404, {"error": "no such lead"})
+            try:
+                if path == "/api/pitch":
+                    msg, cost = PITCH.draft_pitch(lead, body.get("extra", ""))
+                    lead["pitch"] = msg
+                else:
+                    html, cost = PITCH.build_mockup(lead)
+                    MOCKUPS.mkdir(exist_ok=True)
+                    slug = re.sub(r"[^a-z0-9]+", "-",
+                                  lead["name"].lower()).strip("-")[:48] or "sample"
+                    (MOCKUPS / f"{slug}.html").write_text(html)
+                    lead["mockup"] = f"/mockups/{slug}.html"
+                lead["spend"] = round(float(lead.get("spend") or 0) + cost, 5)
+            except Exception as e:
+                return self._send(502, {"error": str(e)[:300]})
+            save(db)
+            return self._send(200, {"ok": True, "lead": lead, "cost": cost})
 
         if path == "/api/forget":
             db = load()

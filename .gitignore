@@ -7,9 +7,11 @@
 *.pyc
 *.tmp
 .DS_Store
+.openrouter-key
 .pytest_cache/
 .venv/
 __pycache__/
 leads.csv
 leads.json
+mockups/
 venv/

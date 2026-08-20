@@ -194,6 +194,63 @@ textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
 .empty { text-align: center; padding: 70px 20px; color: var(--ink-faint); }
 .empty b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 7px; font-weight: 620; }
 
+/* Score: a small tabular number, not a badge competing with the status pill.
+   Rank is secondary information — it orders the list, it does not shout. */
+.score { font: 650 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums; color: var(--ink-faint); min-width: 26px; text-align: right; }
+.score.hot { color: var(--jade); }
+.score.cold { color: var(--ink-faint); opacity: .5; }
+.why { margin: 0 0 4px; font-size: 12.5px; color: var(--ink-faint); }
+.why b { color: var(--ink-soft); font-weight: 600; }
+
+/* An overdue follow-up is the highest-value thing on the page — most sales come
+   from the second contact — so it gets the one alarming colour. */
+.nudge { font-size: 11.5px; font-weight: 600; color: var(--sienna);
+  background: var(--sienna-soft); padding: 4px 9px; border-radius: 6px; white-space: nowrap; }
+
+.gen { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.gen button {
+  font: 600 12.5px/1 inherit; padding: 9px 13px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--jade); background: var(--jade); color: #fff;
+}
+.gen button.ghost { background: var(--card); color: var(--jade); }
+.gen button:disabled { opacity: .5; cursor: default; }
+.gen a { font-size: 12.5px; color: var(--jade); font-weight: 600; }
+.gen .cost { font-size: 11.5px; color: var(--ink-faint); margin-left: auto;
+  font-variant-numeric: tabular-nums; }
+
+.pitchbox { margin-top: 11px; }
+.pitchbox textarea { min-height: 108px; }
+.pitchrow { display: flex; gap: 8px; align-items: center; margin-top: 7px; }
+.pitchrow button { font: 600 12px/1 inherit; padding: 7px 12px; border-radius: 7px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--ink-soft); cursor: pointer; }
+.pitchrow button.ok { background: var(--jade); color: #fff; border-color: var(--jade); }
+
+/* ------------------------------------------------------------------- map */
+.viewtabs { display: flex; gap: 4px; background: var(--slate-soft); padding: 3px;
+  border-radius: 9px; }
+.viewtabs button { border: 0; background: transparent; color: var(--ink-soft);
+  font: 600 13px/1 inherit; padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+.viewtabs button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+#map { display: none; position: relative; height: 620px; border-radius: var(--radius);
+  overflow: hidden; border: 1px solid var(--rule); background: #dfe6e2; }
+body.mapview #map { display: block; }
+body.mapview .leads { display: none; }
+#tiles { position: absolute; inset: 0; }
+#tiles img { position: absolute; width: 256px; height: 256px; }
+.pin { position: absolute; width: 18px; height: 18px; margin: -18px 0 0 -9px; cursor: pointer;
+  border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.pin b { position: absolute; inset: 0; display: grid; place-items: center;
+  transform: rotate(45deg); font: 700 9px/1 sans-serif; color: #fff; }
+.maplabel { position: absolute; left: 10px; bottom: 8px; font-size: 10.5px;
+  background: rgba(255,255,255,.86); color: #333; padding: 3px 7px; border-radius: 5px; }
+.mapcard { position: absolute; background: var(--card); border: 1px solid var(--rule);
+  border-radius: 9px; padding: 10px 12px; box-shadow: var(--shadow); max-width: 240px;
+  font-size: 13px; z-index: 5; }
+.mapcard b { display: block; margin-bottom: 3px; }
+.mapcard span { color: var(--ink-faint); font-size: 12px; }
+
 /* -------------------------------------------------------------- progress */
 .veil {
   position: fixed; inset: 0; background: color-mix(in srgb, var(--chrome) 78%, transparent);
@@ -273,10 +330,15 @@ textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
 
   <div class="tools">
     <input id="q" placeholder="Filter by name, street or note…" autocomplete="off">
+    <div class="viewtabs">
+      <button id="tabList" class="on">List</button>
+      <button id="tabMap">Map</button>
+    </div>
     <a class="export" href="/api/export" download="leads.csv">Export CSV</a>
   </div>
 
   <div class="leads" id="list"></div>
+  <div id="map"><div id="tiles"></div><div class="maplabel">© OpenStreetMap contributors</div></div>
 </main>
 
 <div class="veil" id="veil">
@@ -358,15 +420,29 @@ function render() {
   wire();
 }
 
+function days(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86400000);
+}
+
 function card(l) {
   const s = l.status || 'new';
   const k = key(l);
+  const d = days(l.status_at);
+  // Chase after 4 days. Any longer and it has gone cold; any shorter and you are
+  // pestering someone who is running a shop.
+  const nudge = (s === 'contacted' && d !== null && d >= 4)
+    ? `<div class="nudge">${d}d no reply — chase</div>` : '';
   return `<div class="lead" data-s="${s}" data-k="${esc(k)}">
     <div class="head">
+      <div class="score ${l.score >= 75 ? 'hot' : l.score < 40 ? 'cold' : ''}"
+           title="${esc((l.why||[]).join(' · ')) || 'no signals'}">${l.score ?? ''}</div>
       <div class="grow">
         <div class="name">${esc(l.name)}</div>
         <div class="meta">${esc(l.address || 'no address on record')}${l.phone ? ' · ' + esc(l.phone) : ''}</div>
       </div>
+      ${nudge}
+      ${l.mockup ? '<div class="warn" style="background:var(--jade-soft);color:var(--jade)">sample ready</div>' : ''}
       ${l.possible_site ? `<div class="warn" title="A domain matching this name exists — confirm before pitching">check ${esc(l.possible_site)}</div>` : ''}
       <div class="pill p-${s}">${LABEL[s]}</div>
     </div>
@@ -382,6 +458,24 @@ function card(l) {
         <button class="drop" data-drop="1">Remove</button>
       </div>
       <textarea placeholder="Notes — who you spoke to, what they said…">${esc(l.note||'')}</textarea>
+
+      ${(l.why||[]).length ? `<p class="why"><b>Why ${l.score}:</b> ${esc(l.why.join(' · '))}</p>` : ''}
+
+      <div class="gen">
+        <button data-gen="pitch" class="ghost">${l.pitch ? 'Rewrite pitch' : 'Draft pitch'}</button>
+        <button data-gen="mockup">${l.mockup ? 'Rebuild sample site' : 'Build sample site'}</button>
+        ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open sample &rarr;</a>` : ''}
+        ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
+      </div>
+
+      <div class="pitchbox" style="${l.pitch ? '' : 'display:none'}">
+        <textarea data-pitch placeholder="Your message will appear here…">${esc(l.pitch||'')}</textarea>
+        <div class="pitchrow">
+          <button data-copy>Copy message</button>
+          <span class="cost" style="font-size:11.5px;color:var(--ink-faint)">
+            Read it, change anything that isn't true, then send it yourself.</span>
+        </div>
+      </div>
     </div>
   </div>`;
 }
@@ -408,6 +502,36 @@ function wire() {
       clearTimeout(t);
       t = setTimeout(() => post('/api/lead', { key: k, note: ta.value }), 500);
     };
+
+    el.querySelectorAll('[data-gen]').forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      const what = b.dataset.gen;
+      const was = b.textContent;
+      b.disabled = true;
+      b.textContent = what === 'pitch' ? 'Writing…' : 'Building… (~30s)';
+      const r = await post('/api/' + what, { key: k });
+      b.disabled = false; b.textContent = was;
+      if (r.error) { alert(r.error); return; }
+      const i = STATE.leads.findIndex(x => key(x) === k);
+      if (i > -1) STATE.leads[i] = { ...STATE.leads[i], ...r.lead };
+      render();
+      const again = document.querySelector(`.lead[data-k="${CSS.escape(k)}"]`);
+      if (again) again.classList.add('open');
+    });
+
+    const pt = el.querySelector('[data-pitch]');
+    if (pt) {
+      let t2; pt.oninput = () => {
+        clearTimeout(t2);
+        t2 = setTimeout(() => post('/api/lead', { key: k, pitch: pt.value }), 500);
+      };
+      el.querySelector('[data-copy]').onclick = (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(pt.value);
+        const btn = e.target; btn.textContent = 'Copied'; btn.classList.add('ok');
+        setTimeout(() => { btn.textContent = 'Copy message'; btn.classList.remove('ok'); }, 1500);
+      };
+    }
   });
 }
 
@@ -471,6 +595,89 @@ async function watch() {
   };
   tick();
 }
+
+/* --------------------------------------------------------------- the map
+   Plain OpenStreetMap raster tiles positioned with CSS — no mapping library,
+   which keeps the zero-dependency rule. You are pitching LOCAL businesses, so
+   seeing six on one street is the difference between emailing and walking in. */
+const TILE = 256;
+const lon2x = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
+const lat2y = (lat, z) => {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z);
+};
+
+function drawMap() {
+  const box = $('map'), tiles = $('tiles');
+  const pts = STATE.leads.filter(l => l.lat && l.lon);
+  tiles.innerHTML = '';
+  box.querySelectorAll('.pin,.mapcard').forEach(n => n.remove());
+  if (!pts.length) {
+    tiles.innerHTML = '<div style="padding:40px;text-align:center;color:#5a6b66">' +
+      'No leads with coordinates yet.</div>';
+    return;
+  }
+  const W = box.clientWidth, H = box.clientHeight;
+  const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon);
+  const c = { lat: (Math.min(...lats)+Math.max(...lats))/2,
+              lon: (Math.min(...lons)+Math.max(...lons))/2 };
+  // Zoom to fit every pin, then back off one step so nothing sits on the edge.
+  let z = 16;
+  for (; z > 9; z--) {
+    const dx = (lon2x(Math.max(...lons), z) - lon2x(Math.min(...lons), z)) * TILE;
+    const dy = (lat2y(Math.min(...lats), z) - lat2y(Math.max(...lats), z)) * TILE;
+    if (dx < W - 90 && dy < H - 90) break;
+  }
+  const cx = lon2x(c.lon, z) * TILE, cy = lat2y(c.lat, z) * TILE;
+  const originX = cx - W / 2, originY = cy - H / 2;
+
+  const n = Math.pow(2, z);
+  for (let tx = Math.floor(originX / TILE); tx <= Math.floor((originX + W) / TILE); tx++) {
+    for (let ty = Math.floor(originY / TILE); ty <= Math.floor((originY + H) / TILE); ty++) {
+      if (ty < 0 || ty >= n) continue;
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.src = `https://tile.openstreetmap.org/${z}/${((tx % n) + n) % n}/${ty}.png`;
+      img.style.left = (tx * TILE - originX) + 'px';
+      img.style.top = (ty * TILE - originY) + 'px';
+      tiles.appendChild(img);
+    }
+  }
+
+  for (const l of pts) {
+    const st = l.status || 'new';
+    const pin = document.createElement('div');
+    pin.className = 'pin';
+    pin.style.background = DOT[st];
+    pin.style.left = (lon2x(l.lon, z) * TILE - originX) + 'px';
+    pin.style.top = (lat2y(l.lat, z) * TILE - originY) + 'px';
+    pin.innerHTML = `<b>${l.score >= 75 ? '★' : ''}</b>`;
+    pin.title = l.name;
+    pin.onclick = (e) => {
+      e.stopPropagation();
+      box.querySelectorAll('.mapcard').forEach(n => n.remove());
+      const card = document.createElement('div');
+      card.className = 'mapcard';
+      card.innerHTML = `<b>${esc(l.name)}</b><span>${esc(l.address||'')}</span>
+        <span>score ${l.score} · ${LABEL[st]}</span>`;
+      card.style.left = Math.min(W - 250, parseFloat(pin.style.left) + 14) + 'px';
+      card.style.top = Math.max(6, parseFloat(pin.style.top) - 60) + 'px';
+      box.appendChild(card);
+    };
+    box.appendChild(pin);
+  }
+}
+
+$('tabList').onclick = () => {
+  document.body.classList.remove('mapview');
+  $('tabList').classList.add('on'); $('tabMap').classList.remove('on');
+};
+$('tabMap').onclick = () => {
+  document.body.classList.add('mapview');
+  $('tabMap').classList.add('on'); $('tabList').classList.remove('on');
+  drawMap();
+};
+addEventListener('resize', () => { if (document.body.classList.contains('mapview')) drawMap(); });
 
 $('pClose').onclick = () => $('veil').classList.remove('on');
 document.addEventListener('keydown', e => {

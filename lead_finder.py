@@ -24,17 +24,50 @@ import urllib.request
 # OSM tags them as free-form key=value pairs — e.g. a plumber is tagged
 # craft=plumber, a restaurant is amenity=restaurant. Add more here as needed.
 CATEGORIES = {
+    # trades — often no site at all, and they win work by being findable
     "plumber": [("craft", "plumber")],
     "electrician": [("craft", "electrician")],
+    "builder": [("craft", "builder"), ("craft", "carpenter")],
+    "painter": [("craft", "painter")],
+    "roofer": [("craft", "roofer")],
+    "landscaper": [("craft", "gardener"), ("shop", "garden_centre")],
+    "cleaner": [("shop", "laundry"), ("shop", "dry_cleaning")],
+    # appearance — heavy repeat custom, booking pages sell well
     "hair_salon": [("shop", "hairdresser")],
-    "nail_salon": [("shop", "beauty")],
+    "barber": [("shop", "hairdresser"), ("shop", "barber")],
+    "nail_salon": [("shop", "beauty"), ("shop", "nail_salon")],
+    "tattoo": [("shop", "tattoo")],
+    "spa": [("leisure", "spa"), ("shop", "massage")],
+    # food — menus and hours are the whole job
     "restaurant": [("amenity", "restaurant")],
     "cafe": [("amenity", "cafe")],
+    "bakery": [("shop", "bakery")],
+    "bar": [("amenity", "bar"), ("amenity", "pub")],
+    "food_truck": [("amenity", "fast_food")],
+    "butcher": [("shop", "butcher")],
+    # services
     "gym": [("leisure", "fitness_centre")],
     "dentist": [("amenity", "dentist")],
+    "doctor": [("amenity", "doctors")],
+    "vet": [("amenity", "veterinary")],
     "lawyer": [("office", "lawyer")],
     "accountant": [("office", "accountant")],
+    "estate_agent": [("office", "estate_agent")],
     "auto_repair": [("shop", "car_repair")],
+    "car_wash": [("amenity", "car_wash")],
+    "dog_groomer": [("shop", "pet_grooming"), ("shop", "pet")],
+    "childcare": [("amenity", "childcare"), ("amenity", "kindergarten")],
+    # retail
+    "florist": [("shop", "florist")],
+    "jeweller": [("shop", "jewelry")],
+    "clothing": [("shop", "clothes")],
+    "furniture": [("shop", "furniture")],
+    "hardware": [("shop", "hardware"), ("shop", "doityourself")],
+    "bike_shop": [("shop", "bicycle")],
+    "bookshop": [("shop", "books")],
+    "optician": [("shop", "optician")],
+    "pharmacy": [("amenity", "pharmacy")],
+    "photographer": [("shop", "photo"), ("craft", "photographer")],
 }
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -112,6 +145,22 @@ def find_leads(elements):
                 "name": name,
                 "phone": tags.get("phone") or tags.get("contact:phone") or "",
                 "address": format_address(tags),
+                "lat": lat,
+                "lon": lon,
+                # Signals that say how ready this business is to buy a website.
+                # Kept as raw facts here; score_lead() turns them into a number,
+                # so the reasoning stays visible instead of collapsing to a digit.
+                "signals": {
+                    # Social presence with nowhere to send people is the single
+                    # best tell: they already care about being found online.
+                    "social": bool(tags.get("contact:facebook") or tags.get("facebook")
+                                   or tags.get("contact:instagram")),
+                    "email": tags.get("email") or tags.get("contact:email") or "",
+                    "hours": bool(tags.get("opening_hours")),
+                    "takeaway": bool(tags.get("delivery") or tags.get("takeaway")),
+                    "cuisine": tags.get("cuisine", ""),
+                    "brand": bool(tags.get("brand")),   # a chain: head office owns the site
+                },
                 "maps_link": (
                     f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
                     if lat is not None
@@ -120,6 +169,44 @@ def find_leads(elements):
             }
         )
     return leads
+
+
+def score_lead(lead):
+    """How worth chasing is this one? Returns (score 0-100, list of reasons).
+
+    Deliberately explainable — the reasons are shown in the app next to the
+    number. A score you cannot interrogate is a score you stop trusting the first
+    time it puts something silly at the top.
+    """
+    sig = lead.get("signals") or {}
+    score, why = 50, []
+
+    if sig.get("social"):
+        score += 25
+        why.append("has social but nowhere to send people")
+    if lead.get("phone"):
+        score += 10
+        why.append("phone listed — you can just call")
+    if sig.get("email"):
+        score += 8
+        why.append("email listed")
+    if sig.get("hours"):
+        score += 5
+        why.append("keeps their listing updated")
+    if sig.get("takeaway") or sig.get("cuisine"):
+        score += 5
+        why.append("takes orders — a menu page pays for itself")
+    if lead.get("possible_site"):
+        score -= 30
+        why.append("might already have a site — check first")
+    if sig.get("brand"):
+        score -= 35
+        why.append("looks like a chain — head office owns the website")
+    if not lead.get("address"):
+        score -= 10
+        why.append("no address on record")
+
+    return max(0, min(100, score)), why
 
 
 # --------------------------------------------------------------- verification
