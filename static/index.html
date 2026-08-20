@@ -251,6 +251,26 @@ body.mapview .leads { display: none; }
 .mapcard b { display: block; margin-bottom: 3px; }
 .mapcard span { color: var(--ink-faint); font-size: 12px; }
 
+/* The scoreboard. Pitched -> replied -> won -> earned, with what the tool cost
+   sitting right beside it. Uncomfortable on purpose: it is the only thing here
+   that can tell you to stop. */
+.scoreboard { display: flex; gap: 22px; margin-top: 12px; flex-wrap: wrap; }
+.sb { display: flex; flex-direction: column; gap: 1px; }
+.sb b { font: 650 19px/1.1 inherit; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.sb span { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); }
+.sb.earn b { color: var(--jade); }
+.sb.cost b { color: var(--ink-soft); font-weight: 550; }
+.sb.arrow { align-self: center; color: var(--ink-faint); font-size: 15px; }
+
+.moneyrow { display: flex; gap: 10px; align-items: center; margin-top: 11px; flex-wrap: wrap; }
+.moneyrow label { font-size: 12px; color: var(--ink-faint); }
+.moneyrow input {
+  width: 92px; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.moneyrow input:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+
 /* Setup banner. Appears only when there is no key, and disappears for good once
    there is — a permanent "configure me" strip is noise on every later visit. */
 .setupbox {
@@ -350,6 +370,7 @@ body.mapview .leads { display: none; }
     <div>
       <h1>Your leads</h1>
       <p class="sub" id="sub">Loading…</p>
+      <div class="scoreboard" id="scoreboard"></div>
     </div>
     <div class="counts" id="counts"></div>
   </div>
@@ -445,6 +466,16 @@ function render() {
     ? `${L.length} businesses found so far · ${by.new||0} you haven't contacted yet`
     : 'Nothing yet — run a search to build your list.';
 
+  const M = STATE.money || {};
+  $('scoreboard').innerHTML = L.length ? `
+    <div class="sb"><b>${M.pitched||0}</b><span>pitched</span></div>
+    <div class="sb arrow">&rarr;</div>
+    <div class="sb"><b>${M.replied||0}</b><span>replied</span></div>
+    <div class="sb arrow">&rarr;</div>
+    <div class="sb"><b>${M.won||0}</b><span>won</span></div>
+    <div class="sb earn"><b>$${(M.earned||0).toFixed(0)}</b><span>earned</span></div>
+    <div class="sb cost"><b>$${(M.spent||0).toFixed(2)}</b><span>tool cost</span></div>` : '';
+
   $('counts').innerHTML =
     `<div class="chip ${filter==='all'?'on':''}" data-f="all">All <b>${L.length}</b></div>` +
     STATE.statuses.map(s => `<div class="chip ${filter===s?'on':''}" data-f="${s}">
@@ -516,6 +547,13 @@ function card(l) {
         ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
       </div>
 
+      <div class="moneyrow">
+        <label>Quoted $<input data-money="quoted" type="number" min="0" step="10"
+          value="${l.quoted ?? ''}" placeholder="0"></label>
+        <label>Paid $<input data-money="paid" type="number" min="0" step="10"
+          value="${l.paid ?? ''}" placeholder="0"></label>
+      </div>
+
       <div class="pitchbox" style="${l.pitch ? '' : 'display:none'}">
         <textarea data-pitch placeholder="Your message will appear here…">${esc(l.pitch||'')}</textarea>
         <div class="pitchrow">
@@ -536,13 +574,15 @@ function wire() {
       e.stopPropagation();
       await post('/api/lead', { key: k, status: b.dataset.st });
       const lead = STATE.leads.find(x => key(x) === k);
-      if (lead) lead.status = b.dataset.st;
+      if (lead) { lead.status = b.dataset.st; lead.status_at = new Date().toISOString().slice(0,10); }
+      await refreshTotals();
       render();
     });
     el.querySelector('[data-drop]').onclick = async (e) => {
       e.stopPropagation();
       await post('/api/forget', { key: k });
       STATE.leads = STATE.leads.filter(x => key(x) !== k);
+      await refreshTotals();
       render();
     };
     const ta = el.querySelector('textarea');
@@ -567,6 +607,27 @@ function wire() {
       if (again) again.classList.add('open');
     });
 
+    el.querySelectorAll('[data-money]').forEach(inp => {
+      let t3; inp.onclick = (e) => e.stopPropagation();
+      inp.oninput = () => {
+        clearTimeout(t3);
+        t3 = setTimeout(async () => {
+          await post('/api/lead', { key: k, [inp.dataset.money]: inp.value });
+          const lead = STATE.leads.find(x => key(x) === k);
+          if (lead) lead[inp.dataset.money] = parseFloat(inp.value) || 0;
+          await refreshTotals();
+          // Repaint the numbers in place — a full render() here would collapse
+          // the card you are typing in and steal focus mid-entry.
+          const M = STATE.money || {}, sb = document.getElementById('scoreboard');
+          if (sb) {
+            const v = [M.pitched||0, M.replied||0, M.won||0,
+                       '$'+(M.earned||0).toFixed(0), '$'+(M.spent||0).toFixed(2)];
+            sb.querySelectorAll('.sb b').forEach((el, i) => el.textContent = v[i]);
+          }
+        }, 600);
+      };
+    });
+
     const pt = el.querySelector('[data-pitch]');
     if (pt) {
       let t2; pt.oninput = () => {
@@ -581,6 +642,16 @@ function wire() {
       };
     }
   });
+}
+
+/* The scoreboard is computed server-side from the stored records. Any mutation
+   has to re-read it rather than patch it locally, or the counts drift away from
+   the truth — which is exactly the failure this scoreboard exists to catch. */
+async function refreshTotals() {
+  try {
+    const s = await (await fetch('/api/state')).json();
+    STATE.money = s.money;
+  } catch { /* leave the last known totals rather than blanking them */ }
 }
 
 const post = (url, body) => fetch(url, {

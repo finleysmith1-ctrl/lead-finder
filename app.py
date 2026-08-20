@@ -202,9 +202,20 @@ class Handler(BaseHTTPRequestHandler):
             # Best prospects first. The whole point of scoring is that your first
             # ten calls are your best ten, so the order has to reflect it.
             leads.sort(key=lambda x: (-x["score"], x.get("name", "")))
+            # The scoreboard. Cost is what the tool spent on AI; earned is what
+            # came back. Both real, both from the same records — no estimates.
+            money = {
+                "spent": round(sum(float(l.get("spend") or 0) for l in leads), 4),
+                "quoted": round(sum(float(l.get("quoted") or 0) for l in leads), 2),
+                "earned": round(sum(float(l.get("paid") or 0) for l in leads), 2),
+                "pitched": sum(1 for l in leads if l.get("status") in
+                               ("contacted", "replied", "won")),
+                "replied": sum(1 for l in leads if l.get("status") in ("replied", "won")),
+                "won": sum(1 for l in leads if l.get("status") == "won"),
+            }
             return self._send(200, {
                 "leads": leads, "searches": db["searches"],
-                "has_key": bool(PITCH.api_key()),
+                "has_key": bool(PITCH.api_key()), "money": money,
                 "categories": sorted(LF.CATEGORIES), "job": job,
                 "statuses": STATUSES,
             })
@@ -257,6 +268,15 @@ class Handler(BaseHTTPRequestHandler):
                         l["status"] = body["status"]
                     if "note" in body:
                         l["note"] = str(body["note"])[:500]
+                    # Money. The whole point of the two weeks is finding out
+                    # whether this earns, and a pipeline that tracks everything
+                    # except revenue cannot answer that.
+                    for f in ("quoted", "paid"):
+                        if f in body:
+                            try:
+                                l[f] = round(max(0.0, float(body[f] or 0)), 2)
+                            except (TypeError, ValueError):
+                                pass
                     if "pitch" in body:
                         # Finley's edits win over the generated draft — the whole
                         # point is that she rewrites anything that isn't right.
