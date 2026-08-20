@@ -25,6 +25,7 @@ import re
 import threading
 import time
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -289,6 +290,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(502, {"error": str(e)[:300]})
             save(db)
             return self._send(200, {"ok": True, "lead": lead, "cost": cost})
+
+        if path == "/api/key":
+            # 🔴 POST with the key in the BODY, never a query string — a URL ends
+            # up in logs and browser history. Validated against OpenRouter before
+            # being written, so a typo fails here with a clear message instead of
+            # silently later. Stored 0600 next to the app, gitignored.
+            k = str(body.get("key", "")).strip()
+            if not k.startswith("sk-or-"):
+                return self._send(400, {"error":
+                    "That doesn't look like an OpenRouter key — they start with sk-or-"})
+            try:
+                req = urllib.request.Request(
+                    "https://openrouter.ai/api/v1/key",
+                    headers={"Authorization": f"Bearer {k}"})
+                info = json.loads(urllib.request.urlopen(req, timeout=20).read())
+            except Exception:
+                return self._send(400, {"error":
+                    "OpenRouter rejected that key. Copy it again from "
+                    "openrouter.ai/keys — you only see it once when you create it."})
+            f = HERE / ".openrouter-key"
+            f.write_text(k)
+            os.chmod(f, 0o600)
+            lim = (info.get("data") or {}).get("limit")
+            return self._send(200, {"ok": True, "limit": lim})
 
         if path == "/api/forget":
             db = load()

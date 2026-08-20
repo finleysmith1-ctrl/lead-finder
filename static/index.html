@@ -251,6 +251,32 @@ body.mapview .leads { display: none; }
 .mapcard b { display: block; margin-bottom: 3px; }
 .mapcard span { color: var(--ink-faint); font-size: 12px; }
 
+/* Setup banner. Appears only when there is no key, and disappears for good once
+   there is — a permanent "configure me" strip is noise on every later visit. */
+.setupbox {
+  background: var(--card); border: 1px solid var(--jade); border-left: 4px solid var(--jade);
+  border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px; box-shadow: var(--shadow);
+}
+.setupbox b { font-size: 15px; }
+.setupbox p { margin: 6px 0 0; font-size: 14px; color: var(--ink-soft); max-width: 62ch; }
+.setupbox ol { margin: 10px 0 12px; padding-left: 20px; font-size: 14px; color: var(--ink-soft); }
+.setupbox li { margin: 3px 0; }
+.setupbox a { color: var(--jade); font-weight: 600; }
+.setuprow { display: flex; gap: 8px; flex-wrap: wrap; }
+.setuprow input {
+  flex: 1; min-width: 240px; padding: 10px 13px; border-radius: 8px; border: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink); font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.setuprow input:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+.setuprow button {
+  padding: 10px 18px; border: 0; border-radius: 8px; background: var(--jade); color: #fff;
+  font: 650 14px/1 inherit; cursor: pointer;
+}
+.setuprow button:disabled { opacity: .5; cursor: default; }
+.keymsg { min-height: 18px; font-size: 13.5px; }
+.keymsg.bad { color: var(--sienna); } .keymsg.good { color: var(--jade); }
+.keynote { font-size: 12.5px; color: var(--ink-faint); }
+
 /* -------------------------------------------------------------- progress */
 .veil {
   position: fixed; inset: 0; background: color-mix(in srgb, var(--chrome) 78%, transparent);
@@ -328,6 +354,27 @@ body.mapview .leads { display: none; }
     <div class="counts" id="counts"></div>
   </div>
 
+  <div id="setup" style="display:none">
+    <div class="setupbox">
+      <b>One thing left to set up</b>
+      <p>Drafting pitches and building sample sites needs an OpenRouter key —
+      that's the service that runs the AI. It's free to create, and you pay only
+      for what you use: about <b>4&cent; per business</b> you pitch in full.</p>
+      <ol>
+        <li>Go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> and sign in</li>
+        <li>Click <b>Create key</b>, then copy it (you only see it once)</li>
+        <li>Paste it below</li>
+      </ol>
+      <div class="setuprow">
+        <input id="keyin" type="password" placeholder="sk-or-..." autocomplete="off" spellcheck="false">
+        <button id="keysave">Save key</button>
+      </div>
+      <p id="keymsg" class="keymsg"></p>
+      <p class="keynote">Everything else works without this — searching, the map,
+      your notes. Only the two AI buttons need it.</p>
+    </div>
+  </div>
+
   <div class="tools">
     <input id="q" placeholder="Filter by name, street or note…" autocomplete="off">
     <div class="viewtabs">
@@ -384,6 +431,7 @@ async function load() {
     $('radlbl').textContent = (last.radius / 1000).toFixed(1) + ' km';
     $('ver').checked = last.verified !== false;
   }
+  $('setup').style.display = STATE.has_key ? 'none' : 'block';
   render();
   if (STATE.job && STATE.job.running && !polling) watch();
 }
@@ -678,6 +726,21 @@ $('tabMap').onclick = () => {
   drawMap();
 };
 addEventListener('resize', () => { if (document.body.classList.contains('mapview')) drawMap(); });
+
+$('keysave').onclick = async () => {
+  const el = $('keyin'), msg = $('keymsg'), btn = $('keysave');
+  const k = el.value.trim();
+  if (!k) { el.focus(); return; }
+  btn.disabled = true; msg.className = 'keymsg'; msg.textContent = 'Checking with OpenRouter…';
+  const r = await post('/api/key', { key: k });
+  btn.disabled = false;
+  if (r.error) { msg.className = 'keymsg bad'; msg.textContent = r.error; return; }
+  msg.className = 'keymsg good';
+  msg.textContent = 'Saved. Draft pitch and Build sample site are live now.';
+  el.value = '';
+  STATE.has_key = true;
+  setTimeout(() => { $('setup').style.display = 'none'; }, 2200);
+};
 
 $('pClose').onclick = () => $('veil').classList.remove('on');
 document.addEventListener('keydown', e => {

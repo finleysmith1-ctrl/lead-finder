@@ -4,6 +4,20 @@ Finds local businesses that have no listed website, using free OpenStreetMap
 data (Nominatim for geocoding + Overpass for business listings) — a starting
 list for freelance web-design outreach. No API key or sign-up required.
 
+## Setup
+
+```bash
+git clone https://github.com/finleysmith1-ctrl/lead-finder.git
+cd lead-finder
+python3 app.py
+```
+
+Python 3 only — no pip install, no dependencies. Searching, the map and your
+notes work immediately. Drafting pitches and building sample sites need a free
+[OpenRouter](https://openrouter.ai/keys) key, which the app asks for on first
+run and validates before saving. You pay OpenRouter directly for what you use:
+roughly **4 cents per business** you pitch in full.
+
 ## The app
 
 ```bash
