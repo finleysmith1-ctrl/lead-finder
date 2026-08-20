@@ -13,7 +13,9 @@ yourself via User-Agent, don't hammer them) — see the comments below.
 import argparse
 import csv
 import json
+import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -120,11 +122,175 @@ def find_leads(elements):
     return leads
 
 
+# --------------------------------------------------------------- verification
+#
+# A missing `website` tag on OSM is NOT proof a business has no website — plenty
+# of shops simply never got tagged. That is the biggest weakness of this tool and
+# the README already warns about it. Measured on the very first result of a real
+# run: "Rudy's Barbershop, Portland" has no OSM website tag and owns
+# rudysbarbershop.com. Pitching a web design to someone who already has a site
+# wastes the one thing there is least of — time.
+#
+# So --verify searches the open web for each lead and drops the ones that clearly
+# already have their own site. Free, no API key, stdlib only.
+
+SEARCH_URL = "https://www.bing.com/search?q="
+
+# A browser User-Agent, unlike the Nominatim calls above. Deliberate and worth
+# explaining: OSM's usage policy asks for an identifying agent so they can
+# contact you. A general search engine has no such policy and simply refuses
+# non-browser clients, so the honest identifying string gets zero results.
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+# 🔴 A listing on one of these is NOT the business having a website — it is a
+# directory that lists everyone. A shop whose only web presence is a Yelp page is
+# still a good lead; arguably a better one, because it proves they care about
+# being findable and have nowhere of their own to send people.
+DIRECTORIES = {
+    "yelp.", "facebook.", "fb.com", "instagram.", "tripadvisor.", "mapquest.",
+    "yellowpages.", "bbb.org", "foursquare.", "nextdoor.", "chamberofcommerce.",
+    "opentable.", "doordash.", "ubereats.", "grubhub.", "booksy.", "vagaro.",
+    "styleseat.", "square.site", "linkedin.", "indeed.", "glassdoor.",
+    "storeshours.", "hours-", "-hours.", "manta.", "cylex", "bizapedia",
+    "google.", "bing.", "apple.com", "wikipedia.", "youtube.", "tiktok.",
+    "angi.", "thumbtack.", "houzz.", "trustpilot.", "zocdoc.", "healthgrades.",
+}
+
+
+def _slug(text):
+    """Letters and digits only, lowercased — 'Rudy's Barbershop' -> rudysbarbershop."""
+    return "".join(c for c in text.lower() if c.isalnum())
+
+
+def looks_like_own_site(name, domain):
+    """Is this domain plausibly THIS business's own website?
+
+    Compares the squashed business name against the squashed domain. Matches
+    'Rudy's Barbershop' to rudysbarbershop.com, and also the common case where
+    the domain uses only the distinctive part of the name ('kimshair.com').
+    """
+    host = domain.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    stem = _slug(host.rsplit(".", 1)[0] if "." in host else host)
+    full = _slug(name)
+    if not stem or not full:
+        return False
+
+    # Generic trade words appear in thousands of unrelated domains.
+    generic = {"the", "and", "salon", "hair", "shop", "barber", "barbershop",
+               "cafe", "restaurant", "bar", "grill", "studio", "spa", "co",
+               "inc", "llc", "company", "clinic", "center", "centre", "beauty",
+               "nails", "dental", "auto", "repair", "gym", "fitness", "law"}
+
+    # The name is contained in the domain: rudysbarbershop.com. Confident.
+    if full in stem:
+        return True
+    # The domain is a shortened form of the name: "Bishops Cuts" -> bishops.co.
+    # 🔴 Must exclude generic stems or salon.com "matches" every salon in town —
+    # and a false match here DELETES a real lead, which is the expensive direction
+    # to be wrong in. Better to leave a verified-website business on the list for
+    # Finley to spot than to silently bin a genuine prospect.
+    if stem in full and stem not in generic and len(stem) >= 5:
+        return True
+    words = [w for w in "".join(
+        c if c.isalnum() else " " for c in name.lower()).split() if w not in generic]
+    # Two or more distinctive words both present is a confident match.
+    hits = sum(1 for w in words if len(w) > 2 and w in stem)
+    return hits >= 2 or (len(words) == 1 and words[0] in stem and len(words[0]) > 4)
+
+
+def find_website(name, location, timeout=20):
+    """Search the open web for this business. Returns its own domain, or None.
+
+    🔴 A NAME MATCH ALONE IS NOT ENOUGH, and the first live run proved it badly.
+    Short business names collide with big unrelated brands:
+
+        "Polaris for Hair"           -> polaris.com    (the snowmobile company)
+        "House of David"             -> house.gov      (the US Congress)
+        "Blondie"                    -> blondie.lnk.to (the band)
+        "Northwest Barber Assoc."    -> northwest.bank
+
+    Every one of those would have silently deleted a real prospect. So a domain is
+    only accepted when the search result that carries it ALSO mentions the town —
+    a genuine local business's own site says where it is; polaris.com does not.
+
+    Returns (domain, certain). `certain` is True only when the town was also in
+    that result. (None, False) means no site found OR the search was unreachable —
+    the caller cannot distinguish those, which is the safe way round: a failed
+    search keeps the lead rather than binning it.
+    """
+    query = f"{name} {location}".strip()
+    url = SEARCH_URL + urllib.parse.quote(query)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", "ignore")
+    except Exception:
+        return None, False
+
+    # "Portland, OR" -> "portland". The town is the part that has to show up.
+    town = location.split(",")[0].strip().lower()
+
+    # Bing wraps each organic result in <li class="b_algo">. Working per-result
+    # keeps a domain tied to the snippet that mentions it, instead of matching a
+    # domain from result 1 against a town named in result 7.
+    # Two grades of answer, because the cost of being wrong is lopsided. A
+    # CERTAIN hit (name matches AND the town appears in the same result) is safe
+    # to drop. A MAYBE (name matches, no town) gets kept and flagged instead —
+    # requiring the town for everything was correct but so strict it only caught
+    # 1 site in 32, which is barely worth running.
+    maybe = None
+    for block in re.split(r'<li class="b_algo"', body)[1:]:
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", block)).lower()
+        local = bool(town) and town in text
+        for host in re.findall(r"https?://([a-z0-9.-]+\.[a-z]{2,})", text):
+            if any(d in host for d in DIRECTORIES):
+                continue
+            if not looks_like_own_site(name, host):
+                continue
+            if local:
+                return host, True
+            if maybe is None:
+                maybe = host
+    return maybe, False
+
+
+def verify_leads(leads, city, pause=1.5):
+    """Drop leads that certainly have their own site; flag the maybes.
+
+    Returns (kept, dropped). Kept leads may carry a `possible_site` — a domain
+    that matched the name but could not be confirmed as local. Those stay on the
+    list with a note rather than being deleted on a guess.
+    """
+    kept, dropped = [], []
+    for i, lead in enumerate(leads, 1):
+        site, certain = find_website(lead["name"], city)
+        if site and certain:
+            lead["found_site"] = site
+            dropped.append(lead)
+            note = f"has {site}"
+        elif site:
+            lead["possible_site"] = site
+            kept.append(lead)
+            note = f"maybe {site} — check"
+        else:
+            kept.append(lead)
+            note = "no site found"
+        print(f"  [{i}/{len(leads)}] {lead['name'][:42]:<42} {note}")
+        # Be a decent citizen of someone else's free service.
+        if i < len(leads):
+            time.sleep(pause)
+    return kept, dropped
+
+
 def write_csv(path, leads):
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["name", "phone", "address", "maps_link"])
+        cols = ["name", "phone", "address", "maps_link", "possible_site"]
+        writer = csv.DictWriter(f, fieldnames=cols)
         writer.writeheader()
-        writer.writerows(leads)
+        writer.writerows({k: l.get(k, "") for k in cols} for l in leads)
 
 
 def main():
@@ -133,6 +299,10 @@ def main():
     parser.add_argument("category", choices=sorted(CATEGORIES), help="business type to search for")
     parser.add_argument("--radius", type=int, default=3000, help="search radius in meters (default 3000, ~1.9 miles)")
     parser.add_argument("--out", default="leads.csv", help="CSV file to write results to (default leads.csv)")
+    parser.add_argument("--verify", action="store_true",
+                        help="search the web for each lead and drop any that already "
+                             "have their own website (slow: ~1.5s per lead, but it is "
+                             "the difference between a lead list and a guess)")
     args = parser.parse_args()
 
     print(f"Looking up '{args.location}'...")
@@ -159,8 +329,33 @@ def main():
     if not leads:
         return
 
+    if args.verify:
+        print(f"\nVerifying {len(leads)} lead(s) against the open web "
+              f"(~{len(leads) * 2 // 60 + 1} min)...")
+        # The location string doubles as the city for searching — "Rudy's
+        # Barbershop" alone is ambiguous, "Rudy's Barbershop Portland, OR" is not.
+        try:
+            leads, dropped = verify_leads(leads, args.location)
+        except KeyboardInterrupt:
+            sys.exit("\nStopped. Nothing written.")
+        maybes = [l for l in leads if l.get("possible_site")]
+        print(f"\n{len(dropped)} definitely had a website and were dropped.")
+        if maybes:
+            print(f"{len(maybes)} might have one — kept, with the domain in the "
+                  f"`possible_site` column so you can check before pitching.")
+        if dropped:
+            print("  e.g. " + ", ".join(
+                f"{d['name']} ({d['found_site']})" for d in dropped[:3]))
+        if not leads:
+            print("None left — every business here already has a site. "
+                  "Try another category or a different area.")
+            return
+
     write_csv(args.out, leads)
     print(f"Wrote {len(leads)} lead(s) -> {args.out}")
+    if not args.verify:
+        print("Tip: add --verify to drop the ones that already have a website. "
+              "On a real run that was over half of them.")
 
 
 if __name__ == "__main__":
