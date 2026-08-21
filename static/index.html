@@ -350,6 +350,7 @@ body.mapview .leads { display: none; }
     <div class="field">
       <label for="cat">Business type</label>
       <select id="cat"></select>
+      <p id="catHint" style="display:none;font-size:11.5px;color:#e6b64c;margin:2px 0 0;line-height:1.4"></p>
     </div>
     <div class="field">
       <label for="rad">Radius — <span id="radlbl">3.0 km</span></label>
@@ -450,8 +451,24 @@ async function load() {
   const r = await fetch('/api/state');
   STATE = await r.json();
   if (!$('cat').options.length) {
-    $('cat').innerHTML = STATE.categories
-      .map(c => `<option value="${c}">${c.replace(/_/g,' ')}</option>`).join('');
+    const thin = new Set(STATE.thin_coverage || []);
+    // Good-coverage trades first, thin ones grouped at the bottom with a marker —
+    // OSM barely maps mobile/service trades, so leading with them sets people up
+    // to get zero results and think the tool is broken.
+    const good = STATE.categories.filter(c => !thin.has(c));
+    const weak = STATE.categories.filter(c => thin.has(c));
+    const opt = c => `<option value="${c}">${c.replace(/_/g,' ')}</option>`;
+    $('cat').innerHTML =
+      `<optgroup label="Storefront trades — best results">${good.map(opt).join('')}</optgroup>`
+      + `<optgroup label="Service trades — often few on the map">${weak.map(opt).join('')}</optgroup>`;
+    $('cat').onchange = () => {
+      const h = $('catHint');
+      if (thin.has($('cat').value)) {
+        h.textContent = "Heads up: map data rarely lists this trade (they usually "
+          + "have no storefront). You may get few or no results.";
+        h.style.display = 'block';
+      } else { h.style.display = 'none'; }
+    };
   }
   // Prefill from the last search — you almost always work the same town, and
   // retyping it every session is the kind of small friction that stops a tool

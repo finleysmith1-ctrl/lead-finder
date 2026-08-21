@@ -70,8 +70,52 @@ CATEGORIES = {
     "photographer": [("shop", "photo"), ("craft", "photographer")],
 }
 
+# 🔴 OpenStreetMap only maps businesses with a PHYSICAL STOREFRONT. Mobile/service
+# trades (plumbers, electricians, cleaners) are barely in it — a QA run found ZERO
+# plumbers in Boise. Listing them without warning makes the tool look broken when
+# it returns nothing. These are flagged so the UI can steer people toward trades
+# that actually have coverage, and warn before a likely-empty search.
+THIN_COVERAGE = {
+    "plumber", "electrician", "builder", "painter", "roofer", "landscaper",
+    "cleaner", "photographer", "accountant", "lawyer", "estate_agent",
+}
+
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+class RateLimited(Exception):
+    """The free map services pushed back (HTTP 429). This is a distinct, expected
+    condition — not a crash — so the app can say 'wait a moment' instead of the
+    scary 'could not reach the service'."""
+
+
+# Nominatim's usage policy is a hard 1 request/second. Running several searches
+# back-to-back tripped 429s that surfaced as a connection error. Enforce the gap
+# ourselves so a normal user working quickly never hits it.
+_last_call = [0.0]
+_MIN_GAP = 1.1
+
+
+def _throttle():
+    import time as _t
+    wait = _MIN_GAP - (_t.monotonic() - _last_call[0])
+    if wait > 0:
+        _t.sleep(wait)
+    _last_call[0] = _t.monotonic()
+
+
+def _open(req, timeout):
+    """One place that talks to the map services: throttled, and 429-aware."""
+    _throttle()
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise RateLimited(
+                "The free map service is asking us to slow down. Wait about a "
+                "minute and try again — this passes on its own.")
+        raise
 
 # Nominatim's usage policy requires a real identifying User-Agent (not a
 # browser string) so they can contact someone if a script misbehaves.
@@ -84,7 +128,7 @@ def geocode(location):
     req = urllib.request.Request(
         f"{NOMINATIM_URL}?{params}", headers={"User-Agent": USER_AGENT}
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with _open(req, 15) as resp:
         results = json.load(resp)
     if not results:
         return None
@@ -109,7 +153,7 @@ def query_overpass(query):
         data=query.encode("utf-8"),
         headers={"User-Agent": USER_AGENT},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with _open(req, 30) as resp:
         return json.load(resp)
 
 

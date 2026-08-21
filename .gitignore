@@ -8,6 +8,8 @@
 *.tmp
 *.zip
 .DS_Store
+.claude/settings.local.json
+.impeccable/
 .openrouter-key
 .pytest_cache/
 .venv/

@@ -158,6 +158,13 @@ true to the trade (e.g. a barber does "haircuts, beard trims") — never specifi
 claims you cannot know. This site is handed to the real owner; one invented
 detail makes it worthless.
 
+🔴 NEVER CHARACTERISE AVAILABILITY BEYOND THE HOURS YOU ARE GIVEN. Do not write
+"open every day", "always here for you", "7 days a week", "24/7", "any time" or
+similar unless the actual hours literally say so. A shop open Mon–Sat described as
+"every day of the week" is a lie the owner will spot instantly. If unsure, say
+nothing about frequency — describe what they do, not when, and let the hours
+section speak for itself.
+
 Output only the HTML, nothing else."""
 
 

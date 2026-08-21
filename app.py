@@ -101,7 +101,17 @@ def run_search(location, category, radius, verify):
         query = LF.build_overpass_query(lat, lon, radius, LF.CATEGORIES[category])
         data = LF.query_overpass(query)
         found = LF.find_leads(data.get("elements", []))
-        step(f"{len(found)} with no website on record", total=len(found))
+        callable_n = sum(1 for l in found if l.get("phone"))
+        # Empty result on a thin-coverage trade is not a bug — it's that OSM
+        # doesn't map that kind of business. Say so, instead of a bare "0 found".
+        if not found and category in LF.THIN_COVERAGE:
+            step(f"No {category.replace('_', ' ')}s found — OpenStreetMap barely "
+                 f"maps this trade (they usually have no storefront). Try a "
+                 f"storefront trade: barber, salon, cafe, restaurant, florist, "
+                 f"dentist, gym.", total=0)
+        else:
+            step(f"{len(found)} with no website — {callable_n} have a phone number",
+                 total=len(found))
 
         if verify and found:
             step("Checking each one against the web", done=0, total=len(found))
@@ -294,7 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "leads": leads, "searches": db["searches"],
                 "has_key": bool(PITCH.api_key()), "money": money,
-                "categories": sorted(LF.CATEGORIES), "job": job,
+                "categories": sorted(LF.CATEGORIES),
+                "thin_coverage": sorted(LF.THIN_COVERAGE), "job": job,
                 "statuses": STATUSES,
             })
         if path == "/api/download":
