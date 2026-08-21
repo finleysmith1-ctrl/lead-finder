@@ -153,6 +153,81 @@ def run_search(location, category, radius, verify):
             _job["running"] = False
 
 
+def run_prep(n):
+    """Background: draft a pitch AND build a sample site for the top N unpitched
+    leads that have a phone. Reuses the _job progress channel so the same panel
+    shows it. Prioritises leads with a phone, because calling is the main channel
+    and a lead with no number is one you can't ring.
+    """
+    def step(stage=None, done=None, total=None, line=None):
+        with _lock:
+            if stage is not None:
+                _job["stage"] = stage
+            if done is not None:
+                _job["done"] = done
+            if total is not None:
+                _job["total"] = total
+            if line:
+                _job["log"].append(line)
+                del _job["log"][:-200]
+
+    try:
+        db = load()
+        def rank(l):
+            sc, _ = LF.score_lead(l)
+            return sc
+        cands = [l for l in db["leads"]
+                 if l.get("status", "new") == "new" and l.get("phone")
+                 and not (l.get("pitch") and l.get("mockup"))]
+        cands.sort(key=lambda l: (-rank(l), l.get("name", "")))
+        cands = cands[:max(1, n)]
+        step(f"Preparing {len(cands)} lead{'s' if len(cands) != 1 else ''}",
+             total=len(cands) * 2, done=0)
+        done = 0
+        for l in cands:
+            k = lead_key(l)
+            name = l.get("name", "")
+            for kind in ("pitch", "mockup"):
+                if l.get(kind):
+                    done += 1
+                    step(f"Preparing {name}", done=done)
+                    continue
+                try:
+                    if kind == "pitch":
+                        msg, cost = PITCH.draft_pitch(l)
+                    else:
+                        html, cost = PITCH.build_mockup(l)
+                    # Re-load and update by key so a status the human changed
+                    # mid-run is not clobbered by this snapshot.
+                    cur = load()
+                    tgt = next((x for x in cur["leads"] if lead_key(x) == k), None)
+                    if tgt is not None:
+                        if kind == "pitch":
+                            tgt["pitch"] = msg
+                        else:
+                            MOCKUPS.mkdir(exist_ok=True)
+                            slug = re.sub(r"[^a-z0-9]+", "-",
+                                          name.lower()).strip("-")[:48] or "sample"
+                            (MOCKUPS / f"{slug}.html").write_text(html)
+                            tgt["mockup"] = f"/mockups/{slug}.html"
+                        tgt["spend"] = round(float(tgt.get("spend") or 0) + cost, 5)
+                        save(cur)
+                        l = tgt
+                    step(line=f"{name}: {kind} ready")
+                except Exception as e:
+                    step(line=f"{name}: {kind} failed — {str(e)[:60]}")
+                done += 1
+                step(f"Preparing {name}", done=done)
+        with _lock:
+            _job["stage"] = f"Prepared {len(cands)} lead{'s' if len(cands) != 1 else ''}"
+    except Exception as e:
+        with _lock:
+            _job["error"] = str(e) or e.__class__.__name__
+    finally:
+        with _lock:
+            _job["running"] = False
+
+
 # -------------------------------------------------------------------- server
 
 class Handler(BaseHTTPRequestHandler):
@@ -334,6 +409,19 @@ class Handler(BaseHTTPRequestHandler):
             os.chmod(f, 0o600)
             lim = (info.get("data") or {}).get("limit")
             return self._send(200, {"ok": True, "limit": lim})
+
+        if path == "/api/prep":
+            if not PITCH.api_key():
+                return self._send(400, {"error":
+                    "No OpenRouter key yet — set one up first (the banner at the top)."})
+            with _lock:
+                if _job["running"]:
+                    return self._send(409, {"error": "something is already running"})
+                _job.update({"running": True, "done": 0, "total": 0,
+                             "stage": "starting", "log": [], "error": None})
+            n = max(1, min(25, int(body.get("n") or 10)))
+            threading.Thread(target=run_prep, daemon=True, args=(n,)).start()
+            return self._send(200, {"ok": True})
 
         if path == "/api/recheck":
             # Verify ONE lead right before pitching: search, then actually open

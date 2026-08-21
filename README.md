@@ -32,6 +32,15 @@ without touching statuses or notes you have already set.
 Loopback only and no login: it holds your notes about real businesses, so it is
 not meant to be reachable from the network.
 
+## Working the list
+
+- **Prep top 10** drafts a pitch and builds a sample site for your ten best
+  unpitched leads in the background — so you show up ready, for about 40 cents.
+- **Call sheet** (opens on your phone) lists the unpitched leads with a phone,
+  best first, each with a tap-to-call button, a spoken opener, and one-tap
+  outcome logging that saves straight back. Prints cleanly if you'd rather carry
+  paper. Calling is the main channel; walking in is the backup.
+
 ## Command line
 
 ```bash

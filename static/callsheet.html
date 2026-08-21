@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call sheet — Lead Finder</title>
+<style>
+/* Phone-first. This is opened on a phone while calling or walking, so the tap
+   targets are big, the number is the biggest thing on each card, and it prints
+   cleanly if she'd rather carry paper. Same jade/pine palette as the app so it
+   reads as the same product. */
+:root {
+  --paper: #f3f6f4; --card: #fff; --ink: #101715; --soft: #4b5a56; --faint: #7d8c88;
+  --rule: #dfe6e2; --jade: #0d7a5f; --jade-soft: #e3f2ec; --sienna: #a8491f;
+  --gold: #8a6a10; --gold-soft: #f8f0d8; --shadow: 0 1px 2px rgba(16,23,21,.06), 0 6px 18px -12px rgba(16,23,21,.25);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper:#0f1513; --card:#161d1b; --ink:#e9efec; --soft:#9fb0aa; --faint:#6d7d78;
+    --rule:#232d2a; --jade:#4cc79c; --jade-soft:#10261f; --sienna:#e08a5c; --gold:#d9b45e; --gold-soft:#262013; }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; background: var(--paper); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; }
+header { position: sticky; top: 0; z-index: 5; background: #0e1c1a; color: #dfeae6;
+  padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+header b { font-size: 17px; letter-spacing: -.02em; }
+header .n { font-size: 13px; color: #7f9a93; }
+header a { color: #7f9a93; text-decoration: none; font-size: 13px; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 16px 14px 60px; }
+.hint { font-size: 13px; color: var(--faint); margin: 4px 2px 14px; }
+
+.card { background: var(--card); border: 1px solid var(--rule); border-left: 4px solid var(--jade);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 15px 16px; margin-bottom: 13px; }
+.card[data-done="1"] { border-left-color: var(--rule); opacity: .55; }
+.rowtop { display: flex; align-items: flex-start; gap: 10px; }
+.name { font-size: 18px; font-weight: 650; letter-spacing: -.01em; flex: 1; }
+.sc { font: 650 13px/1 ui-monospace, Menlo, monospace; color: var(--faint); padding-top: 3px; }
+.addr { font-size: 14px; color: var(--soft); margin: 3px 0 12px; }
+
+/* The number is the point of the whole page — biggest tap target, dials on tap. */
+a.call { display: flex; align-items: center; justify-content: center; gap: 9px;
+  background: var(--jade); color: #fff; text-decoration: none; font-size: 18px; font-weight: 650;
+  padding: 14px; border-radius: 10px; }
+a.call:active { filter: brightness(.92); }
+.nocall { text-align: center; color: var(--faint); font-size: 14px; padding: 12px;
+  border: 1px dashed var(--rule); border-radius: 10px; }
+
+.say { background: var(--jade-soft); border-radius: 9px; padding: 11px 13px; margin: 12px 0;
+  font-size: 14.5px; line-height: 1.5; }
+.say b { display: block; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--jade); margin-bottom: 4px; }
+
+.warn { font-size: 12.5px; color: var(--sienna); margin: 8px 0 0; }
+
+/* Outcome buttons — one tap logs what happened and greys the card. */
+.out { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 13px; }
+.out button { flex: 1; min-width: 88px; font: 600 13px/1 inherit; padding: 11px 8px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--soft); border-radius: 9px; cursor: pointer; }
+.out button:active { transform: scale(.97); }
+.out button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.links { display: flex; gap: 14px; margin-top: 11px; font-size: 13px; }
+.links a { color: var(--jade); font-weight: 600; text-decoration: none; }
+
+.empty { text-align: center; color: var(--faint); padding: 60px 20px; }
+.empty b { display: block; color: var(--ink); font-size: 18px; margin-bottom: 6px; }
+
+@media print {
+  header, a.call, .out, .links { display: none !important; }
+  .card { break-inside: avoid; box-shadow: none; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div><b>Call sheet</b> <span class="n" id="count"></span></div>
+  <a href="/">&larr; back to app</a>
+</header>
+<div class="wrap">
+  <p class="hint">Businesses you haven't contacted yet, best first, ones with a phone
+  at the top. Tap the number to call. Tap an outcome and it saves back to the app.</p>
+  <div id="list"></div>
+</div>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const key = (l) => (l.name||'').trim().toLowerCase() + '|' + (l.address||'').trim().toLowerCase();
+const post = (u, b) => fetch(u, { method:'POST', headers:{'Content-Type':'application/json'},
+  body: JSON.stringify(b) }).then(r => r.json());
+
+// A spoken opener. Templated, not AI — a phone call is improvised, and a fixed
+// first line she can glance at beats waiting on a model. Uses the real trade and
+// street so it doesn't sound generic.
+function opener(l) {
+  const trade = (l.search || '').split('·')[0].trim().replace(/_/g, ' ') || 'business';
+  const street = (l.address || '').replace(/\s+\w+\s*$/, '').split(',')[0] || '';
+  return `Hi, is this ${l.name}? My name's Finley — I build simple websites for `
+       + `local ${trade}s. I noticed you don't have one yet, so people have to call `
+       + `to find your hours. Would you have a quick minute?`;
+}
+
+let LEADS = [];
+async function load() {
+  const s = await (await fetch('/api/state')).json();
+  // Unpitched only; phones first; then by score.
+  LEADS = (s.leads || [])
+    .filter(l => (l.status||'new') === 'new')
+    .sort((a,b) => (b.phone?1:0)-(a.phone?1:0) || (b.score||0)-(a.score||0)
+                   || (a.name||'').localeCompare(b.name||''));
+  render();
+}
+
+function render() {
+  document.getElementById('count').textContent = LEADS.length + ' to work through';
+  const el = document.getElementById('list');
+  if (!LEADS.length) {
+    el.innerHTML = `<div class="empty"><b>All caught up</b>
+      Everything's been contacted, or you haven't searched yet.</div>`;
+    return;
+  }
+  el.innerHTML = LEADS.map(l => {
+    const k = key(l);
+    const tel = (l.phone||'').replace(/[^\d+]/g, '');
+    return `<div class="card" data-k="${esc(k)}" data-done="0">
+      <div class="rowtop">
+        <div class="name">${esc(l.name)}</div>
+        <div class="sc">${l.score ?? ''}</div>
+      </div>
+      <div class="addr">${esc(l.address || 'no address')}</div>
+      ${tel ? `<a class="call" href="tel:${esc(tel)}">📞 Call ${esc(l.phone)}</a>`
+            : `<div class="nocall">No phone listed — walk in or look them up</div>`}
+      ${l.confirmed_site ? `<div class="warn">⚠ already has ${esc(l.confirmed_site)} — maybe skip</div>`
+        : l.possible_site ? `<div class="warn">⚠ might have ${esc(l.possible_site)} — check first</div>` : ''}
+      <div class="say"><b>What to say</b>${esc(opener(l))}</div>
+      ${(l.mockup || l.pitch) ? `<div class="links">
+        ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open sample site</a>` : ''}
+        ${l.pitch ? `<a href="#" data-pitch="${esc(k)}">Copy follow-up message</a>` : ''}
+      </div>` : ''}
+      <div class="out">
+        <button data-st="contacted" data-k="${esc(k)}">No answer / left msg</button>
+        <button data-st="replied" data-k="${esc(k)}">Talked — interested</button>
+        <button data-st="dead" data-k="${esc(k)}">Not interested</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.out button').forEach(b => b.onclick = async () => {
+    await post('/api/lead', { key: b.dataset.k, status: b.dataset.st });
+    const card = b.closest('.card');
+    card.dataset.done = '1';
+    card.querySelectorAll('.out button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+  });
+  el.querySelectorAll('[data-pitch]').forEach(a => a.onclick = (e) => {
+    e.preventDefault();
+    const l = LEADS.find(x => key(x) === a.dataset.pitch);
+    if (l && l.pitch) { navigator.clipboard.writeText(l.pitch);
+      a.textContent = 'Copied ✓'; setTimeout(() => a.textContent = 'Copy follow-up message', 1500); }
+  });
+}
+load();
+</script>
+</body>
+</html>

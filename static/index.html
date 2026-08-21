@@ -129,6 +129,9 @@ h1 { margin: 0; font-size: 25px; letter-spacing: -.025em; font-weight: 680; }
   border: 1px solid var(--rule); padding: 9px 13px; border-radius: 8px; background: var(--card);
 }
 .tools a.export:hover { border-color: var(--jade); }
+  button.export { cursor: pointer; }
+  #prepBtn { background: var(--jade); color: #fff; border-color: var(--jade); }
+  #prepBtn:disabled { opacity: .5; cursor: default; }
 
 /* ----------------------------------------------------------------- leads */
 .leads { display: flex; flex-direction: column; gap: 9px; }
@@ -402,6 +405,8 @@ body.mapview .leads { display: none; }
       <button id="tabList" class="on">List</button>
       <button id="tabMap">Map</button>
     </div>
+    <button class="export" id="prepBtn" title="Draft a pitch and build a sample site for your top 10 unpitched leads">Prep top 10</button>
+    <a class="export" href="/static/callsheet.html" target="_blank" rel="noopener">Call sheet &rarr;</a>
     <a class="export" href="/api/export" download="leads.csv">Export CSV</a>
   </div>
 
@@ -682,6 +687,17 @@ const post = (url, body) => fetch(url, {
 $('rad').oninput = () => $('radlbl').textContent = ($('rad').value / 1000).toFixed(1) + ' km';
 $('q').oninput = () => { query = $('q').value; render(); };
 
+$('prepBtn').onclick = async () => {
+  $('prepBtn').disabled = true;
+  $('pTitle').textContent = 'Preparing your top 10';
+  $('pStage').textContent = 'starting…'; $('pLog').innerHTML = '';
+  $('pBar').style.width = '0'; $('pTick').textContent = ''; $('pClose').style.display = 'none';
+  $('veil').classList.add('on');
+  const r = await post('/api/prep', { n: 10 });
+  if (r.error) { $('prepBtn').disabled = false; return fail(r.error); }
+  watch();
+};
+
 $('go').onclick = async () => {
   const loc = $('loc').value.trim();
   if (!loc) { $('loc').focus(); return; }
@@ -726,6 +742,7 @@ async function watch() {
       $('pTitle').textContent = 'Finished';
       $('pClose').style.display = 'inline-block';
       $('go').disabled = false;
+      $('prepBtn').disabled = false;
       render();
       return;
     }
