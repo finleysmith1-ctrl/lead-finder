@@ -288,6 +288,73 @@ def looks_like_own_site(name, domain):
     return hits >= 2 or (len(words) == 1 and words[0] in stem and len(words[0]) > 4)
 
 
+# Tells that a domain resolves but has nothing real on it — a registrar parking
+# page, a for-sale holder, a blank host. A business whose only "website" is one of
+# these effectively has NO working site, which makes them a GOOD lead (and a sharp
+# pitch angle: "you own the domain but there's nothing there").
+PARKED = (
+    "domain is for sale", "buy this domain", "is parked", "parked free",
+    "godaddy.com/domainsearch", "sedoparking", "hugedomains", "domain for sale",
+    "this domain may be for sale", "under construction", "coming soon",
+    "default web page", "apache2 ubuntu default", "welcome to nginx",
+    "future home of something", "account suspended",
+)
+
+
+def fetch_page(url, timeout=12):
+    """Open a URL like a browser and return its lowercased HTML, or None.
+
+    Small local business sites almost never block a plain client — that is the big
+    marketplaces (Etsy, eBay). Using stdlib urllib keeps this tool dependency-free
+    and portable to a Mac, which is the whole point of the project.
+    """
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read(500_000)          # cap: we only need title/headers/footer
+        return raw.decode("utf-8", "ignore").lower()
+    except Exception:
+        return None
+
+
+def site_is_real(domain, name, timeout=12):
+    """Actually OPEN a candidate domain and judge it. This is the verification
+    step: a name matching a domain in a search result is a lead, not proof — the
+    proof is opening the page and seeing the business on it.
+
+    Returns one of:
+      "match"   — the site loads and mentions this business. They have a site.
+      "parked"  — the domain resolves but is empty/for-sale. No working site.
+      "unknown" — loads but does not clearly mention them, OR would not open at
+                  all. Cannot confirm either way.
+    """
+    host = domain[4:] if domain.startswith("www.") else domain
+    generic = {"the", "and", "salon", "hair", "shop", "barber", "barbershop",
+               "cafe", "restaurant", "bar", "grill", "studio", "spa", "co",
+               "inc", "llc", "company", "clinic", "center", "centre", "beauty",
+               "nails", "dental", "auto", "repair", "gym", "fitness", "law"}
+    words = [w for w in re.sub(r"[^a-z0-9 ]", " ", name.lower()).split()
+             if len(w) > 2 and w not in generic]
+
+    opened = False
+    for url in (f"https://{host}", f"https://www.{host}", f"http://{host}"):
+        html = fetch_page(url, timeout)
+        if html is None:
+            continue
+        opened = True
+        if any(p in html for p in PARKED):
+            return "parked"
+        # A distinctive word from the name, on the business's own matching domain,
+        # is strong confirmation — this really is their site.
+        if any(w in html for w in words):
+            return "match"
+        break
+    # Opened but no distinctive word: ambiguous. Never opened: also unknown, and
+    # the caller keeps the lead — a site we could not reach is not a site we can
+    # prove exists.
+    return "unknown"
+
+
 def find_website(name, location, timeout=20):
     """Search the open web for this business. Returns its own domain, or None.
 
@@ -328,7 +395,7 @@ def find_website(name, location, timeout=20):
     # to drop. A MAYBE (name matches, no town) gets kept and flagged instead —
     # requiring the town for everything was correct but so strict it only caught
     # 1 site in 32, which is barely worth running.
-    maybe = None
+    candidate, local_hit = None, None
     for block in re.split(r'<li class="b_algo"', body)[1:]:
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", block)).lower()
         local = bool(town) and town in text
@@ -337,11 +404,29 @@ def find_website(name, location, timeout=20):
                 continue
             if not looks_like_own_site(name, host):
                 continue
-            if local:
-                return host, True
-            if maybe is None:
-                maybe = host
-    return maybe, False
+            if local and local_hit is None:
+                local_hit = host
+            if candidate is None:
+                candidate = host
+    best = local_hit or candidate
+    if not best:
+        return None, False
+
+    # 🔴 THE VERIFICATION STEP. A search snippet is a lead, not proof — before we
+    # tell Finley a business has a website (and drop it), we OPEN the site and look.
+    # This turns three cases into honest answers that the search alone got wrong:
+    #   - a live site that mentions them  -> confirmed, drop it (don't waste a pitch)
+    #   - a parked / for-sale / dead domain -> NOT a working site, KEEP the lead
+    #     (and it's a great angle: "you own the domain but there's nothing there")
+    #   - a domain we can't confirm -> flag it, never silently drop
+    verdict = site_is_real(best, name, timeout=12)
+    if verdict == "match":
+        return best, True            # opened it, saw them — real site, drop
+    if verdict == "parked":
+        return None, False           # domain resolves but empty — keep as a lead
+    # "unknown": found a name-matching domain but couldn't confirm it's live and
+    # theirs. Flag it for a human glance rather than dropping a possible prospect.
+    return best, False
 
 
 def verify_leads(leads, city, pause=1.5):

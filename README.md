@@ -55,6 +55,13 @@ business found that has a name but no `website` tag on OpenStreetMap.
   result — confident enough to bin) or
   **flags** it (name matches, town absent — kept, with the domain in
   `possible_site` so you can check).
+  Then it goes one step further and **actually opens the candidate site**: a
+  live page that mentions the business confirms they have a site (dropped); a
+  parked/for-sale/dead domain means they have no working site (kept — and it's a
+  sharp pitch angle); anything it can't confirm is flagged, never silently
+  dropped. There's also a **Re-check for website** button on each lead to run
+  this the moment before you pitch.
+
   Requiring the town is load-bearing: without it "Polaris for Hair" matched
   polaris.com (snowmobiles) and "House of David" matched house.gov. Uncertainty
   always keeps the lead — a wrongly dropped one is invisible, a wrongly kept one

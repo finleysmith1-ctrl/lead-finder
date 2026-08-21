@@ -522,6 +522,7 @@ function card(l) {
       </div>
       ${nudge}
       ${l.mockup ? '<div class="warn" style="background:var(--jade-soft);color:var(--jade)">sample ready</div>' : ''}
+      ${l.confirmed_site ? `<div class="warn" style="background:var(--sienna-soft);color:var(--sienna)" title="This site was opened and it really is theirs — probably not worth pitching">already has ${esc(l.confirmed_site)}</div>` : ''}
       ${l.possible_site ? `<div class="warn" title="A domain matching this name exists — confirm before pitching">check ${esc(l.possible_site)}</div>` : ''}
       <div class="pill p-${s}">${LABEL[s]}</div>
     </div>
@@ -543,6 +544,7 @@ function card(l) {
       <div class="gen">
         <button data-gen="pitch" class="ghost">${l.pitch ? 'Rewrite pitch' : 'Draft pitch'}</button>
         <button data-gen="mockup">${l.mockup ? 'Rebuild sample site' : 'Build sample site'}</button>
+        <button data-recheck class="ghost">Re-check for website</button>
         ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open sample &rarr;</a>` : ''}
         ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
       </div>
@@ -627,6 +629,23 @@ function wire() {
         }, 600);
       };
     });
+
+    const rc = el.querySelector('[data-recheck]');
+    if (rc) rc.onclick = async (e) => {
+      e.stopPropagation();
+      const was = rc.textContent; rc.disabled = true; rc.textContent = 'Opening their site…';
+      const r = await post('/api/recheck', { key: k });
+      rc.disabled = false; rc.textContent = was;
+      if (r.error) { alert(r.error); return; }
+      const i = STATE.leads.findIndex(x => key(x) === k);
+      if (i > -1) STATE.leads[i] = { ...STATE.leads[i], ...r.lead };
+      rc.textContent = r.result === 'has' ? 'Already has a site ✓'
+                     : r.result === 'maybe' ? 'Maybe — see flag'
+                     : 'No working site — good to pitch';
+      setTimeout(() => { render();
+        const again = document.querySelector(`.lead[data-k="${CSS.escape(k)}"]`);
+        if (again) again.classList.add('open'); }, 1400);
+    };
 
     const pt = el.querySelector('[data-pitch]');
     if (pt) {

@@ -335,6 +335,34 @@ class Handler(BaseHTTPRequestHandler):
             lim = (info.get("data") or {}).get("limit")
             return self._send(200, {"ok": True, "limit": lim})
 
+        if path == "/api/recheck":
+            # Verify ONE lead right before pitching: search, then actually open
+            # any candidate site and look. Updates the lead in place — clears a
+            # stale "check" flag, confirms a real site, or leaves it clean.
+            db = load()
+            lead = next((l for l in db["leads"] if lead_key(l) == body.get("key")), None)
+            if not lead:
+                return self._send(404, {"error": "no such lead"})
+            loc = (lead.get("search") or "").split("·")[-1].strip() or ""
+            try:
+                site, certain = LF.find_website(lead["name"], loc or lead.get("address", ""))
+            except Exception as e:
+                return self._send(502, {"error": str(e)[:200]})
+            if site and certain:
+                result = "has"
+                lead["confirmed_site"] = site
+                lead.pop("possible_site", None)
+            elif site:
+                result = "maybe"
+                lead["possible_site"] = site
+            else:
+                result = "none"
+                lead.pop("possible_site", None)
+            lead["checked_at"] = time.strftime("%Y-%m-%d")
+            save(db)
+            return self._send(200, {"ok": True, "result": result,
+                                    "site": site or "", "lead": lead})
+
         if path == "/api/forget":
             db = load()
             before = len(db["leads"])
