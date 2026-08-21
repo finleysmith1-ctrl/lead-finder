@@ -134,6 +134,21 @@ Make it genuinely EXCELLENT:
   bold shapes, big type, texture. Where a photo genuinely belongs (a hero, a
   gallery), use a tasteful placeholder block clearly labelled "your photo here"
   so the owner knows exactly what to send you — never a fake stock image.
+- ACTION BUTTONS that work everywhere: if a phone is given, a "Call now" button
+  as <a href="tel:..."> and, on mobile, a sticky call bar is a nice touch. If an
+  email is given, a "Get directions" link only if a directions URL is given, and
+  an email link. These are the things that turn a visitor into a customer.
+- SEO done right, because a great local site is one Google can read:
+  * a <title> like "<Name> — <trade> in <town>" and a real <meta name=description>.
+  * Open Graph tags (og:title, og:description, og:type=business.business) so a
+    shared link looks right.
+  * a favicon as an inline data-URI SVG (e.g. the business initial on a coloured
+    tile) via <link rel="icon" href="data:image/svg+xml,...">. No external file.
+  * a JSON-LD <script type="application/ld+json"> LocalBusiness block using ONLY
+    the real name, address, phone, geo and hours you are given — this is the one
+    place a <script> tag is allowed, and it must contain data, not code. Omit any
+    field you were not given rather than inventing it.
+- A favicon and touch-friendly 44px+ tap targets.
 
 🔴 INVENT NOTHING FACTUAL. Use ONLY the details you are given. No made-up reviews,
 testimonials, prices, staff names, years-in-business, awards, phone numbers or
@@ -175,6 +190,18 @@ def build_mockup(lead, details=""):
         facts.append(f"Email: {sig['email']}")
     if sig.get("takeaway"):
         facts.append("They do takeaway/delivery — make ordering or calling prominent.")
+    if lead.get("maps_link"):
+        facts.append(f"Directions link (use for a 'Get directions' button): "
+                     f"{lead['maps_link']}")
+    town = ""
+    for part in (lead.get("address") or "").split():
+        pass
+    town = (lead.get("search") or "").split("·")[-1].strip()
+    if town:
+        facts.append(f"Town/area (for the title and SEO): {town}")
+    if lead.get("lat") and lead.get("lon"):
+        facts.append(f"Geo coordinates for the LocalBusiness schema: "
+                     f"{lead['lat']}, {lead['lon']}")
     if details.strip():
         facts.append(f"What Finley knows about them (use as true): {details.strip()}")
 
@@ -191,9 +218,14 @@ def build_mockup(lead, details=""):
         raise RuntimeError("the model did not return a web page")
 
     # 🔴 Belt and braces on the no-external-requests rule. A page that phones home
-    # is one that breaks when shown offline, and worse, one that could leak that
-    # Finley opened it. Strip anything that reaches out.
-    html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.S | re.I)
+    # breaks when shown offline and could leak that Finley opened it. Strip
+    # anything that reaches out — but KEEP the JSON-LD block, which is structured
+    # DATA (application/ld+json), not code, and is exactly what helps a local
+    # business show up properly in Google. A ld+json script never executes and
+    # never fetches, so it is safe to keep and valuable to have.
+    html = re.sub(
+        r'<script\b(?![^>]*type=["\']?application/ld\+json)[^>]*>.*?</script>',
+        "", html, flags=re.S | re.I)
     html = re.sub(r'<link\b[^>]*rel=["\']?stylesheet[^>]*>', "", html, flags=re.I)
     html = re.sub(r"@import\s+url\([^)]*\);?", "", html, flags=re.I)
     return html, cost

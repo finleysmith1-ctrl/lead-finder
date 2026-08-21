@@ -561,7 +561,7 @@ function card(l) {
           ? `<a class="emaillink" href="mailto:${esc(l.signals.email)}?subject=${encodeURIComponent('A website for ' + (l.name||''))}&body=${encodeURIComponent(l.pitch)}">Email it &rarr;</a>`
           : ''}
         ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open site &rarr;</a>` : ''}
-        ${l.mockup ? `<a href="${esc(l.mockup)}" download="${esc((l.name||'site').replace(/[^a-z0-9]+/gi,'-').toLowerCase())}.html">Download</a>` : ''}
+        ${l.mockup ? `<a href="/api/download?key=${encodeURIComponent(k)}">Download site (ready to host)</a>` : ''}
         ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
       </div>
       <input data-details type="text" class="details-in"

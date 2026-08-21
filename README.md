@@ -34,6 +34,13 @@ not meant to be reachable from the network.
 
 ## Working the list
 
+- **Build their website** produces a complete, deliverable single-page site for
+  the business: responsive, trade-specific design, their real opening hours,
+  Call / Get directions / Email buttons, SEO tags and LocalBusiness structured
+  data so Google reads it right, and a favicon — all self-contained, no external
+  requests, nothing invented.
+- **Download site (ready to host)** gives you a ZIP with `index.html`, a favicon,
+  the pitch, and plain instructions to put it live free on Netlify in ~5 minutes.
 - **Prep top 10** drafts a pitch and builds a sample site for your ten best
   unpitched leads in the background — so you show up ready, for about 40 cents.
 - **Call sheet** (opens on your phone) lists the unpitched leads with a phone,

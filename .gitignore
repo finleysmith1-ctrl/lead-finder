@@ -6,6 +6,7 @@
 *.egg-info/
 *.pyc
 *.tmp
+*.zip
 .DS_Store
 .openrouter-key
 .pytest_cache/

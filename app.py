@@ -18,6 +18,7 @@ State lives in leads.json next to this file. Gitignored: never commit scraped
 business data.
 """
 
+import io
 import json
 import mimetypes
 import os
@@ -26,11 +27,13 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import lead_finder as LF
 import pitch as PITCH
+import bundle as BUNDLE
 
 HERE = Path(__file__).parent
 STORE = HERE / "leads.json"
@@ -294,6 +297,29 @@ class Handler(BaseHTTPRequestHandler):
                 "categories": sorted(LF.CATEGORIES), "job": job,
                 "statuses": STATUSES,
             })
+        if path == "/api/download":
+            # The whole deliverable in one ZIP: the site as index.html, hosting
+            # instructions, a favicon, and the pitch. This is the "download
+            # anything needed" ask — everything to hand a client, in one file.
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            k = (qs.get("key") or [""])[0]
+            db = load()
+            lead = next((l for l in db["leads"] if lead_key(l) == k), None)
+            if not lead or not lead.get("mockup"):
+                return self._send(404, {"error": "build the website first"})
+            html_file = MOCKUPS / lead["mockup"].split("/")[-1]
+            if not html_file.exists():
+                return self._send(404, {"error": "the built site file is missing"})
+            data, fname = BUNDLE.make_zip(
+                lead["name"], html_file.read_text(), lead.get("pitch", ""))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         if path == "/api/export":
             db = load()
             cols = ["name", "phone", "address", "status", "note", "possible_site", "maps_link"]
