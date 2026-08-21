@@ -157,6 +157,11 @@ def find_leads(elements):
                                    or tags.get("contact:instagram")),
                     "email": tags.get("email") or tags.get("contact:email") or "",
                     "hours": bool(tags.get("opening_hours")),
+                    # The actual hours string, so a generated site shows their
+                    # REAL hours instead of inventing "Mon-Fri 9-5". Never fill
+                    # this in from a guess — an empty value means the site omits
+                    # the hours section rather than making one up.
+                    "hours_text": tags.get("opening_hours", ""),
                     "takeaway": bool(tags.get("delivery") or tags.get("takeaway")),
                     "cuisine": tags.get("cuisine", ""),
                     "brand": bool(tags.get("brand")),   # a chain: head office owns the site

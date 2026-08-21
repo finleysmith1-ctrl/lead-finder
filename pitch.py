@@ -110,46 +110,78 @@ def draft_pitch(lead, extra=""):
 
 # ------------------------------------------------------------------ mockup
 
-SITE_SYSTEM = """You build a single-page website for a small local business, to
-be shown to the owner as a free sample.
+SITE_SYSTEM = """You are a senior web designer building the ACTUAL website a small
+local business will use — not a rough sample. It has to be good enough that the
+owner says "yes, put it live." Take it seriously.
 
-Output ONE complete HTML file: <!doctype html> through </html>, with all CSS in a
-<style> block. No JavaScript. No external requests of any kind — no font CDNs, no
-image URLs, no analytics. It must render correctly opened straight off disk.
+Output ONE complete HTML file: <!doctype html> through </html>, all CSS in a
+<style> block. NO JavaScript at all — the nav can be a simple in-page anchor menu
+that wraps on mobile, which needs none. No external requests of any kind — no
+font CDNs, no image URLs, no map embeds, no analytics. It must render perfectly
+opened straight off disk.
 
-Design it for THIS business, not from a template. A barber and a florist should
-not look alike: pick a palette, a type pairing and a layout that suit the trade.
-Use CSS gradients, shapes and generous type instead of photographs, since there
-are no images available.
+Make it genuinely EXCELLENT:
+- A real single-page site with proper sections: a strong hero with the name and
+  what they do, a services (or menu) section, an about paragraph, hours, how to
+  find and contact them, and a footer. Use a sticky header with in-page nav.
+- Fully responsive. It will mostly be viewed on a phone — design mobile-first and
+  make sure it looks right at 375px wide and on a desktop.
+- Design it for THIS trade. A barber, a florist, a law office and a taco truck
+  must each look distinctly like themselves — commit to a palette, a characterful
+  type pairing (system fonts only, but use weight, size and spacing to give it
+  personality), and a layout that fits. Avoid a generic template look.
+- Since there are no photos, build a beautiful photo-free design: CSS gradients,
+  bold shapes, big type, texture. Where a photo genuinely belongs (a hero, a
+  gallery), use a tasteful placeholder block clearly labelled "your photo here"
+  so the owner knows exactly what to send you — never a fake stock image.
 
-Must include: the business name, what they do, where they are, the phone number
-as a tel: link if given, opening hours if given, and one clear call to action.
+🔴 INVENT NOTHING FACTUAL. Use ONLY the details you are given. No made-up reviews,
+testimonials, prices, staff names, years-in-business, awards, phone numbers or
+email addresses. If you are given hours, show them exactly; if not, omit the
+hours section. If you are given services for the trade, keep them generic and
+true to the trade (e.g. a barber does "haircuts, beard trims") — never specific
+claims you cannot know. This site is handed to the real owner; one invented
+detail makes it worthless.
 
-🔴 INVENT NOTHING FACTUAL. No made-up reviews, no fake testimonials, no prices,
-no staff names, no "established 1987", no awards. Where a real site would show
-photographs, leave a tastefully styled placeholder block that says what belongs
-there. This is shown to the actual owner — anything invented reads as sloppy and
-kills the pitch.
-
-Output only the HTML."""
+Output only the HTML, nothing else."""
 
 
-def build_mockup(lead):
-    """Return (html, cost). A real page, for a real business, with no invented facts."""
+def _human_hours(osm):
+    """OSM hours like 'Mo-Fr 09:00-18:00; Sa 10:00-16:00' are unreadable to a
+    normal person. Give the model the raw string and let it phrase it, but hand it
+    over clearly labelled as the real, exact hours."""
+    return osm.strip()
+
+
+def build_mockup(lead, details=""):
+    """Return (html, cost). The real deliverable site, with no invented facts.
+
+    `details` is anything Finley has learned about the business — their real
+    colours, services they mentioned, that they want online booking. It is passed
+    through as ground truth the model may use.
+    """
     sig = lead.get("signals") or {}
-    facts = [f"Name: {lead.get('name')}",
-             f"Trade: {(lead.get('search') or '').split('·')[0].strip() or 'local business'}",
-             f"Address: {lead.get('address') or '(not known — omit the address section)'}",
-             f"Phone: {lead.get('phone') or '(none known — use a contact form styled as a placeholder)'}"]
+    trade = (lead.get("search") or "").split("·")[0].strip() or "local business"
+    facts = [f"Business name: {lead.get('name')}",
+             f"Trade: {trade}",
+             f"Address: {lead.get('address') or '(not known — omit the address, keep a contact section)'}",
+             f"Phone: {lead.get('phone') or '(none known — invite contact but invent no number)'}"]
+    if sig.get("hours_text"):
+        facts.append(f"REAL opening hours (show these exactly, phrased nicely): "
+                     f"{_human_hours(sig['hours_text'])}")
     if sig.get("cuisine"):
-        facts.append(f"Cuisine: {sig['cuisine']}")
+        facts.append(f"Cuisine / speciality: {sig['cuisine']}")
+    if sig.get("email"):
+        facts.append(f"Email: {sig['email']}")
     if sig.get("takeaway"):
-        facts.append("They do takeaway/delivery, so ordering should be prominent.")
+        facts.append("They do takeaway/delivery — make ordering or calling prominent.")
+    if details.strip():
+        facts.append(f"What Finley knows about them (use as true): {details.strip()}")
 
     html, cost = _call([
         {"role": "system", "content": SITE_SYSTEM},
         {"role": "user", "content": "\n".join(facts)},
-    ], SITE_MODEL, max_tokens=8000, temperature=0.9)
+    ], SITE_MODEL, max_tokens=14000, temperature=0.9)
 
     # Models wrap HTML in a fence about half the time.
     m = re.search(r"```(?:html)?\s*(.+?)```", html, re.S)

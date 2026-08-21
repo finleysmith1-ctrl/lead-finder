@@ -352,6 +352,8 @@ class Handler(BaseHTTPRequestHandler):
                                 l[f] = round(max(0.0, float(body[f] or 0)), 2)
                             except (TypeError, ValueError):
                                 pass
+                    if "site_details" in body:
+                        l["site_details"] = str(body["site_details"])[:600]
                     if "pitch" in body:
                         # Finley's edits win over the generated draft — the whole
                         # point is that she rewrites anything that isn't right.
@@ -374,7 +376,8 @@ class Handler(BaseHTTPRequestHandler):
                     msg, cost = PITCH.draft_pitch(lead, body.get("extra", ""))
                     lead["pitch"] = msg
                 else:
-                    html, cost = PITCH.build_mockup(lead)
+                    html, cost = PITCH.build_mockup(
+                        lead, str(body.get("details") or lead.get("site_details") or ""))
                     MOCKUPS.mkdir(exist_ok=True)
                     slug = re.sub(r"[^a-z0-9]+", "-",
                                   lead["name"].lower()).strip("-")[:48] or "sample"

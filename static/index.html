@@ -222,7 +222,11 @@ textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
 .gen .cost { font-size: 11.5px; color: var(--ink-faint); margin-left: auto;
   font-variant-numeric: tabular-nums; }
 
-.pitchbox { margin-top: 11px; }
+.details-in { width: 100%; margin-top: 8px; padding: 8px 11px; border-radius: 7px;
+    border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
+    font: inherit; font-size: 13px; }
+  .details-in:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+  .pitchbox { margin-top: 11px; }
 .pitchbox textarea { min-height: 108px; }
 .pitchrow { display: flex; gap: 8px; align-items: center; margin-top: 7px; }
 .pitchrow button { font: 600 12px/1 inherit; padding: 7px 12px; border-radius: 7px;
@@ -548,11 +552,15 @@ function card(l) {
 
       <div class="gen">
         <button data-gen="pitch" class="ghost">${l.pitch ? 'Rewrite pitch' : 'Draft pitch'}</button>
-        <button data-gen="mockup">${l.mockup ? 'Rebuild sample site' : 'Build sample site'}</button>
+        <button data-gen="mockup">${l.mockup ? 'Rebuild their website' : 'Build their website'}</button>
         <button data-recheck class="ghost">Re-check for website</button>
-        ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open sample &rarr;</a>` : ''}
+        ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open site &rarr;</a>` : ''}
+        ${l.mockup ? `<a href="${esc(l.mockup)}" download="${esc((l.name||'site').replace(/[^a-z0-9]+/gi,'-').toLowerCase())}.html">Download</a>` : ''}
         ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
       </div>
+      <input data-details type="text" class="details-in"
+        placeholder="Optional: anything you know — their colours, services, 'they want online booking'…"
+        value="${esc(l.site_details||'')}">
 
       <div class="moneyrow">
         <label>Quoted $<input data-money="quoted" type="number" min="0" step="10"
@@ -604,7 +612,9 @@ function wire() {
       const was = b.textContent;
       b.disabled = true;
       b.textContent = what === 'pitch' ? 'Writing…' : 'Building… (~30s)';
-      const r = await post('/api/' + what, { key: k });
+      const detEl = el.querySelector('[data-details]');
+      const r = await post('/api/' + what,
+        what === 'mockup' && detEl ? { key: k, details: detEl.value } : { key: k });
       b.disabled = false; b.textContent = was;
       if (r.error) { alert(r.error); return; }
       const i = STATE.leads.findIndex(x => key(x) === k);
@@ -634,6 +644,11 @@ function wire() {
         }, 600);
       };
     });
+
+    const det = el.querySelector('[data-details]');
+    if (det) { let td; det.oninput = () => { clearTimeout(td);
+      td = setTimeout(() => post('/api/lead', { key: k, site_details: det.value }), 500); };
+      det.onclick = (e) => e.stopPropagation(); }
 
     const rc = el.querySelector('[data-recheck]');
     if (rc) rc.onclick = async (e) => {
