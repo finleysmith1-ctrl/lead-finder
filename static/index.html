@@ -219,6 +219,9 @@ textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
 .gen button.ghost { background: var(--card); color: var(--jade); }
 .gen button:disabled { opacity: .5; cursor: default; }
 .gen a { font-size: 12.5px; color: var(--jade); font-weight: 600; }
+  .emaillink { font-size: 12.5px; color: var(--jade); font-weight: 600; text-decoration: none;
+    border: 1px solid var(--jade); padding: 8px 12px; border-radius: 7px; }
+  .emaillink:hover { background: var(--jade-soft); }
 .gen .cost { font-size: 11.5px; color: var(--ink-faint); margin-left: auto;
   font-variant-numeric: tabular-nums; }
 
@@ -554,6 +557,9 @@ function card(l) {
         <button data-gen="pitch" class="ghost">${l.pitch ? 'Rewrite pitch' : 'Draft pitch'}</button>
         <button data-gen="mockup">${l.mockup ? 'Rebuild their website' : 'Build their website'}</button>
         <button data-recheck class="ghost">Re-check for website</button>
+        ${(l.signals && l.signals.email && l.pitch)
+          ? `<a class="emaillink" href="mailto:${esc(l.signals.email)}?subject=${encodeURIComponent('A website for ' + (l.name||''))}&body=${encodeURIComponent(l.pitch)}">Email it &rarr;</a>`
+          : ''}
         ${l.mockup ? `<a href="${esc(l.mockup)}" target="_blank" rel="noopener">Open site &rarr;</a>` : ''}
         ${l.mockup ? `<a href="${esc(l.mockup)}" download="${esc((l.name||'site').replace(/[^a-z0-9]+/gi,'-').toLowerCase())}.html">Download</a>` : ''}
         ${l.spend ? `<span class="cost">$${Number(l.spend).toFixed(3)} spent</span>` : ''}
