@@ -1,4 +1,4 @@
-# lead-finder
+# sitesmith
 
 Python 3, standard library only (no dependencies). Finds local businesses
 with no listed website via OpenStreetMap (Nominatim + Overpass), for

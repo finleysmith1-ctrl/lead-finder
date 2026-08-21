@@ -1,4 +1,4 @@
-# lead-finder
+# sitesmith
 
 Finds local businesses that have no listed website, using free OpenStreetMap
 data (Nominatim for geocoding + Overpass for business listings) — a starting
@@ -7,8 +7,8 @@ list for freelance web-design outreach. No API key or sign-up required.
 ## Setup
 
 ```bash
-git clone https://github.com/finleysmith1-ctrl/lead-finder.git
-cd lead-finder
+git clone https://github.com/finleysmith1-ctrl/sitesmith.git
+cd sitesmith
 python3 app.py
 ```
 

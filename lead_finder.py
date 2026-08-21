@@ -75,7 +75,7 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 # Nominatim's usage policy requires a real identifying User-Agent (not a
 # browser string) so they can contact someone if a script misbehaves.
-USER_AGENT = "lead-finder/0.1 (personal project; finley.smith.1@alpha.school)"
+USER_AGENT = "sitesmith/0.1 (personal project; finley.smith.1@alpha.school)"
 
 
 def geocode(location):

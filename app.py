@@ -519,7 +519,7 @@ def main():
             f"\n  Could not start on port {PORT}: {e}\n"
             f"  Something else is probably using it. Try another:\n"
             f"      PORT=8421 python3 app.py\n")
-    print(f"\n  Lead Finder running — open  http://localhost:{PORT}\n")
+    print(f"\n  Sitesmith running — open  http://localhost:{PORT}\n")
     print("  Ctrl+C to stop.\n")
     try:
         srv.serve_forever()
