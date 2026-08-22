@@ -243,23 +243,55 @@ def build_mockup(lead, details=""):
         {"role": "system", "content": SITE_SYSTEM},
         {"role": "user", "content": "\n".join(facts)},
     ], SITE_MODEL, max_tokens=14000, temperature=0.9)
+    return _clean_html(html), cost
 
-    # Models wrap HTML in a fence about half the time.
+
+def _clean_html(html):
+    """Unwrap a fenced reply and enforce the no-external-requests rule.
+
+    Shared by build and revise so there is exactly one place that guarantees a
+    generated page can't phone home. The ld+json block is deliberately kept — it
+    is structured DATA, never executes, never fetches, and is what makes a local
+    business show up properly in Google.
+    """
     m = re.search(r"```(?:html)?\s*(.+?)```", html, re.S)
     if m:
         html = m.group(1).strip()
     if "<!doctype" not in html[:200].lower() and "<html" not in html[:200].lower():
         raise RuntimeError("the model did not return a web page")
-
-    # 🔴 Belt and braces on the no-external-requests rule. A page that phones home
-    # breaks when shown offline and could leak that Finley opened it. Strip
-    # anything that reaches out — but KEEP the JSON-LD block, which is structured
-    # DATA (application/ld+json), not code, and is exactly what helps a local
-    # business show up properly in Google. A ld+json script never executes and
-    # never fetches, so it is safe to keep and valuable to have.
     html = re.sub(
         r'<script\b(?![^>]*type=["\']?application/ld\+json)[^>]*>.*?</script>',
         "", html, flags=re.S | re.I)
     html = re.sub(r'<link\b[^>]*rel=["\']?stylesheet[^>]*>', "", html, flags=re.I)
     html = re.sub(r"@import\s+url\([^)]*\);?", "", html, flags=re.I)
-    return html, cost
+    return html
+
+
+REVISE_SYSTEM = """You are editing an existing single-page business website. You are
+given the full current HTML and one plain-English change from the site's owner or
+their designer. Apply ONLY that change and return the COMPLETE updated HTML file.
+
+Rules:
+- Change exactly what was asked and leave everything else identical — same
+  content, same structure, same design language, unless the change requires
+  otherwise. This is a surgical edit, not a redesign.
+- Keep every hard rule of the original: one self-contained HTML file, all CSS
+  inline, NO external requests (no font CDNs, image URLs, map embeds, analytics),
+  and the only <script> allowed is the JSON-LD data block.
+- Invent nothing. Do not add reviews, prices, hours, or claims that were not in
+  the page or the instruction. If the change would require a fact you do not have,
+  make the visual change and leave a clearly-labelled placeholder for the fact.
+- Preserve the craft floor: no eyebrow labels, no emoji icons, no coloured
+  left-borders thicker than 1px, no gradient text, themed browser surfaces.
+
+Output only the complete HTML, nothing else."""
+
+
+def revise_mockup(current_html, instruction):
+    """Apply a described change to an existing site. Returns (html, cost)."""
+    html, cost = _call([
+        {"role": "system", "content": REVISE_SYSTEM},
+        {"role": "user", "content": f"CHANGE REQUESTED:\n{instruction.strip()}\n\n"
+                                    f"CURRENT HTML:\n{current_html}"}],
+        SITE_MODEL, max_tokens=16000, temperature=0.5)
+    return _clean_html(html), cost

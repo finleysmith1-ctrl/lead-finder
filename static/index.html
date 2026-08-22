@@ -229,6 +229,13 @@ textarea:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
     border: 1px solid var(--rule); background: var(--paper); color: var(--ink);
     font: inherit; font-size: 13px; }
   .details-in:focus { outline: 2px solid var(--jade); outline-offset: -1px; }
+  .revise { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .revise .details-in { flex: 1; min-width: 200px; margin-top: 0; }
+  .revise button { font: 600 12.5px/1 inherit; padding: 9px 13px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--jade); background: var(--jade); color: #fff; }
+  .revise button:disabled { opacity: .5; cursor: default; }
+  .versions { width: 100%; font-size: 12px; color: var(--ink-faint); }
+  .versions a { color: var(--jade); font-weight: 600; text-decoration: none; }
   .pitchbox { margin-top: 11px; }
 .pitchbox textarea { min-height: 108px; }
 .pitchrow { display: flex; gap: 8px; align-items: center; margin-top: 7px; }
@@ -584,6 +591,14 @@ function card(l) {
       <input data-details type="text" class="details-in"
         placeholder="Optional: anything you know — their colours, services, 'they want online booking'…"
         value="${esc(l.site_details||'')}">
+      ${l.mockup ? `<div class="revise">
+        <input data-revise type="text" class="details-in"
+          placeholder="Change it by typing — e.g. 'make the hero darker', 'add a services section'…">
+        <button data-revisego>Apply change</button>
+        ${(l.history||[]).length ? `<div class="versions">Earlier: ${
+          l.history.slice().reverse().map((h,i)=>`<a href="${esc(h.file)}" target="_blank" rel="noopener" title="${esc(h.note||'')}">v${l.history.length-i}</a>`).join(' · ')
+        }</div>` : ''}
+      </div>` : ''}
 
       <div class="moneyrow">
         <label>Quoted $<input data-money="quoted" type="number" min="0" step="10"
@@ -672,6 +687,26 @@ function wire() {
     if (det) { let td; det.oninput = () => { clearTimeout(td);
       td = setTimeout(() => post('/api/lead', { key: k, site_details: det.value }), 500); };
       det.onclick = (e) => e.stopPropagation(); }
+
+    const rv = el.querySelector('[data-revisego]');
+    if (rv) rv.onclick = async (e) => {
+      e.stopPropagation();
+      const inp = el.querySelector('[data-revise]');
+      const instruction = (inp.value || '').trim();
+      if (!instruction) { inp.focus(); return; }
+      const was = rv.textContent; rv.disabled = true; rv.textContent = 'Applying… (~40s)';
+      const r = await post('/api/revise', { key: k, instruction });
+      rv.disabled = false; rv.textContent = was;
+      if (r.error) { alert(r.error); return; }
+      const i = STATE.leads.findIndex(x => key(x) === k);
+      if (i > -1) STATE.leads[i] = { ...STATE.leads[i], ...r.lead };
+      inp.value = '';
+      render();
+      const again = document.querySelector(`.lead[data-k="${CSS.escape(k)}"]`);
+      if (again) { again.classList.add('open');
+        const link = again.querySelector('a[href^="/mockups/"]');
+        if (link) window.open(link.getAttribute('href'), '_blank'); }
+    };
 
     const rc = el.querySelector('[data-recheck]');
     if (rc) rc.onclick = async (e) => {

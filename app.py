@@ -463,6 +463,37 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=run_prep, daemon=True, args=(n,)).start()
             return self._send(200, {"ok": True})
 
+        if path == "/api/revise":
+            if not PITCH.api_key():
+                return self._send(400, {"error": "Set up an OpenRouter key first."})
+            db = load()
+            lead = next((l for l in db["leads"] if lead_key(l) == body.get("key")), None)
+            if not lead or not lead.get("mockup"):
+                return self._send(404, {"error": "build the website first"})
+            instruction = str(body.get("instruction", "")).strip()
+            if not instruction:
+                return self._send(400, {"error": "describe the change you want"})
+            cur = MOCKUPS / lead["mockup"].split("/")[-1]
+            if not cur.exists():
+                return self._send(404, {"error": "the built site file is missing"})
+            try:
+                html, cost = PITCH.revise_mockup(cur.read_text(), instruction)
+            except Exception as e:
+                return self._send(502, {"error": str(e)[:300]})
+            # Keep the version being replaced, so a bad edit can be rolled back —
+            # SiteSeeker keeps every build; this keeps the recent ones.
+            slug = cur.stem
+            hist = lead.setdefault("history", [])
+            archived = f"{slug}.v{len(hist)+1}.html"
+            (MOCKUPS / archived).write_text(cur.read_text())
+            hist.append({"file": f"/mockups/{archived}", "at": time.strftime("%Y-%m-%d %H:%M"),
+                         "note": instruction[:80]})
+            del hist[:-8]                        # keep the last 8 versions
+            cur.write_text(html)
+            lead["spend"] = round(float(lead.get("spend") or 0) + cost, 5)
+            save(db)
+            return self._send(200, {"ok": True, "lead": lead, "cost": cost})
+
         if path == "/api/recheck":
             # Verify ONE lead right before pitching: search, then actually open
             # any candidate site and look. Updates the lead in place — clears a
