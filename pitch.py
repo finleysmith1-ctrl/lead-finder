@@ -150,6 +150,33 @@ Make it genuinely EXCELLENT:
     field you were not given rather than inventing it.
 - A favicon and touch-friendly 44px+ tap targets.
 
+CRAFT FLOOR — the difference between "built" and "AI-generated". These are the
+tells that make a page look templated; avoid every one:
+- NO eyebrow/kicker label above a heading (no "SOUTHWEST PORTLAND" mini-caption
+  over the title). The heading carries its own weight — delete the label.
+- NO emoji or unicode glyphs as icons. Draw icons as inline SVG in one consistent
+  stroke and weight, or use none. An emoji is a costume, not an icon.
+- NO coloured left-border thicker than 1px on cards, callouts or list items — it
+  is the number-one AI tell. And do NOT build the whole page as a stack of
+  identical icon+heading+text cards; vary the section layouts.
+- NO gradient text. Emphasis comes from weight, size or a solid brand colour.
+- Shadows must have a real offset AND a soft blur — never a zero-offset coloured
+  halo, which is decoration pretending to be depth.
+- On a coloured surface, tint secondary text from that hue — never flat gray.
+- THEME THE BROWSER SURFACES from the palette: ::selection colour, :focus-visible
+  rings, the scrollbar, tabular numerals. This is the cheapest signal a page was
+  crafted rather than assembled, and the thing most sites skip.
+- TYPE DISCIPLINE: tighten display tracking (about -0.02 to -0.04em on big
+  headings), keep body text to a 65-75 character measure, use an obvious scale and
+  weight ladder, and set text-wrap: balance on headings. System fonts only (our
+  no-external-requests rule) — so wring the character out of weight, size, case
+  and spacing, not a downloaded typeface.
+- ONE authored motion moment, CSS-only, respecting prefers-reduced-motion — a
+  considered hero entrance, not the same fade on every section and not nothing.
+- Commit to the world. A barber, a florist and a law office should feel like
+  different places. When torn between safe and bold, go bold — but never at the
+  cost of legibility or the honesty rules below.
+
 🔴 INVENT NOTHING FACTUAL. Use ONLY the details you are given. No made-up reviews,
 testimonials, prices, staff names, years-in-business, awards, phone numbers or
 email addresses. If you are given hours, show them exactly; if not, omit the
